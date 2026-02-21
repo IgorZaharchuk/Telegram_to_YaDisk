@@ -1,76 +1,42 @@
 """
-Telegram клиент на базе Telethon
-Исправленная версия с улучшенной диагностикой
+Telegram клиент на базе Telethon с поддержкой StringSession
 """
 
 import os
-import sys
 from telethon import TelegramClient, functions
+from telethon.sessions import StringSession
 import logging
 
 logger = logging.getLogger(__name__)
 
 class TelegramDownloader:
-    def __init__(self, api_id: int, api_hash: str, phone: str, session_file: str = "user_session"):
+    def __init__(self, api_id: int, api_hash: str, session_string: str = None, session_file: str = "user_session"):
         self.api_id = api_id
         self.api_hash = api_hash
-        self.phone = phone
+        self.session_string = session_string
         self.session_file = session_file
         self.client = None
     
     async def connect(self):
-        """Подключение к Telegram с улучшенной обработкой ошибок"""
-        try:
-            # Проверяем наличие API_ID и API_HASH
-            if not self.api_id or not self.api_hash:
-                raise ValueError("API_ID и API_HASH должны быть заданы")
-            
-            if not self.phone:
-                raise ValueError("PHONE_NUMBER должен быть задан")
-            
-            logger.info(f"🔑 Подключение с API_ID: {self.api_id}, телефон: {self.phone}")
-            
+        """Подключение к Telegram с использованием StringSession если есть"""
+        
+        # Если есть строка сессии, используем её
+        if self.session_string:
+            logger.info("🔑 Использую StringSession из переменной окружения")
+            self.client = TelegramClient(StringSession(self.session_string), self.api_id, self.api_hash)
+        else:
+            # Иначе используем файловую сессию
+            logger.info("📁 Использую файловую сессию")
             self.client = TelegramClient(self.session_file, self.api_id, self.api_hash)
-            
-            # Пытаемся подключиться
-            await self.client.connect()
-            
-            # Проверяем, авторизованы ли уже
-            if await self.client.is_user_authorized():
-                logger.info("✅ Уже авторизован, использую существующую сессию")
-                return self
-            
-            # Если не авторизованы, начинаем процесс входа
-            logger.info("📱 Требуется авторизация. Отправляю код на телефон...")
-            
-            await self.client.send_code_request(self.phone)
-            
-            logger.info("📨 Код отправлен! Проверьте:")
-            logger.info("   - Telegram на телефоне (чат 'Telegram')")
-            logger.info("   - SMS (если не нашли в приложении)")
-            logger.info("   - Через минуту будет доступен звонок")
-            
-            # Ждем код от пользователя
-            code = input("Please enter the code you received: ")
-            
-            if not code:
-                raise ValueError("Код не может быть пустым")
-            
-            # Пробуем войти с кодом
-            await self.client.sign_in(phone=self.phone, code=code.strip())
-            
-            logger.info("✅ Подключено к Telegram")
-            return self
-            
-        except Exception as e:
-            logger.error(f"❌ Ошибка подключения: {e}")
-            if "PHONE_NUMBER_INVALID" in str(e):
-                logger.error("❌ Неправильный формат номера телефона. Должно быть +79123456789")
-            elif "PHONE_CODE_INVALID" in str(e):
-                logger.error("❌ Неправильный код подтверждения")
-            elif "PHONE_NUMBER_FLOOD" in str(e):
-                logger.error("❌ Слишком много попыток. Подождите 10-15 минут")
-            raise
+        
+        await self.client.connect()
+        
+        # Проверяем, авторизован ли
+        if not await self.client.is_user_authorized():
+            raise Exception("❌ Сессия недействительна")
+        
+        logger.info("✅ Подключено к Telegram")
+        return self
     
     async def disconnect(self):
         """Отключение от Telegram"""
@@ -80,11 +46,7 @@ class TelegramDownloader:
     
     async def get_chat(self, chat_id: int):
         """Получение информации о чате"""
-        try:
-            return await self.client.get_entity(chat_id)
-        except Exception as e:
-            logger.error(f"❌ Не удалось получить чат {chat_id}: {e}")
-            raise
+        return await self.client.get_entity(chat_id)
     
     async def get_topic_name(self, chat_id: int, topic_id: int) -> str | None:
         """Получение человеческого названия темы"""
