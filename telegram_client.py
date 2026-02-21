@@ -1,8 +1,9 @@
 """
 Telegram клиент на базе Telethon
-ОСНОВАНО НА ОФИЦИАЛЬНОЙ ДОКУМЕНТАЦИИ:
-- https://tl.telethon.dev/methods/channels/get_forum_topics_by_id.html
+ОСНОВАНО НА РЕАЛЬНЫХ ПРОЕКТАХ:
+- https://github.com/leo-cunes/telegram-topic-ids-extractor
 - https://stackoverflow.com/questions/79157818/
+- https://tl.telethon.dev/methods/channels/get_forum_topics_by_id.html
 """
 
 from telethon import TelegramClient, functions, types
@@ -49,7 +50,7 @@ class TelegramDownloader:
     def get_topic_id_from_message(self, message):
         """
         Получение ID темы из сообщения
-        Основано на: https://stackoverflow.com/a/79158221
+        Источник: https://stackoverflow.com/a/79158221
         """
         if not message.reply_to:
             return None
@@ -67,28 +68,80 @@ class TelegramDownloader:
     async def get_topic_name(self, chat_id: int, topic_id: int) -> str | None:
         """
         Получение названия темы по ID
-        Основано на: https://tl.telethon.dev/methods/channels/get_forum_topics_by_id.html
+        Источник: https://tl.telethon.dev/methods/channels/get_forum_topics_by_id.html
         """
         try:
             channel = await self.client.get_input_entity(chat_id)
             
-            # ТОЧНО КАК В ДОКУМЕНТАЦИИ
+            # ТОЧНО КАК В ДОКУМЕНТАЦИИ И ПРИМЕРАХ
             result = await self.client(functions.channels.GetForumTopicsByIDRequest(
                 channel=channel,
                 topics=[topic_id]  # список целых чисел
             ))
             
-            # Извлекаем название из первого топика
-            if result and hasattr(result, 'topics') and result.topics:
-                # В документации: topics[0].title
-                topic_title = result.topics[0].title
-                logger.info(f"✅ Найдено название темы: {topic_title}")
-                return topic_title
+            # Проверяем структуру ответа
+            if result:
+                logger.debug(f"Result type: {type(result)}")
+                logger.debug(f"Result attributes: {dir(result)}")
                 
+                # В официальной документации: result.topics[0].title
+                if hasattr(result, 'topics') and result.topics and len(result.topics) > 0:
+                    topic = result.topics[0]
+                    if hasattr(topic, 'title'):
+                        topic_title = topic.title
+                        logger.info(f"✅ Найдено название темы: {topic_title}")
+                        return topic_title
+                
+                # Альтернативный вариант из примеров
+                if hasattr(result, 'topics'):
+                    logger.debug(f"Topics count: {len(result.topics)}")
+                    
         except Exception as e:
-            logger.debug(f"Не удалось получить название темы {topic_id}: {e}")
+            logger.debug(f"Ошибка получения названия темы {topic_id}: {e}")
         
         return None
+    
+    async def get_all_topics(self, chat_id: int):
+        """
+        Получение ВСЕХ тем чата (как в проекте telegram-topic-ids-extractor)
+        Источник: https://github.com/leo-cunes/telegram-topic-ids-extractor
+        """
+        try:
+            channel = await self.client.get_input_entity(chat_id)
+            topics = []
+            offset_date = None
+            offset_id = 0
+            offset_topic = 0
+            
+            while True:
+                result = await self.client(functions.channels.GetForumTopicsRequest(
+                    channel=channel,
+                    offset_date=offset_date,
+                    offset_id=offset_id,
+                    offset_topic=offset_topic,
+                    limit=100
+                ))
+                
+                if not result.topics:
+                    break
+                
+                topics.extend(result.topics)
+                
+                last = result.topics[-1]
+                offset_topic = last.id
+                offset_id = last.top_message
+                
+                # Находим дату последнего сообщения
+                for msg in result.messages:
+                    if msg.id == offset_id:
+                        offset_date = msg.date
+                        break
+                        
+            return topics
+            
+        except Exception as e:
+            logger.error(f"Ошибка получения всех тем: {e}")
+            return []
     
     async def get_messages(self, chat_id: int, min_id: int = 0, reverse: bool = True):
         """Получение сообщений из чата"""
