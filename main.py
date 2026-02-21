@@ -91,12 +91,11 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
     temp_files = []
     
     try:
-        # 1. Определяем тему по официальной документации
+        # 1. Определяем тему
         topic_id = tg_client.get_topic_id_from_message(message)
-        
-        # Отладка для понимания структуры сообщения
+
+        # Отладка
         logger.debug(f"Message ID: {message.id}")
-        logger.debug(f"Has reply_to: {bool(message.reply_to)}")
         if message.reply_to:
             logger.debug(f"reply_to_top_id: {getattr(message.reply_to, 'reply_to_top_id', None)}")
             logger.debug(f"reply_to_msg_id: {getattr(message.reply_to, 'reply_to_msg_id', None)}")
@@ -106,16 +105,15 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
 
         if topic_id:
             topic_id_str = str(topic_id)
-            
+
             # Проверяем кэш
             if topic_id_str in topic_cache:
                 topic_name = topic_cache[topic_id_str]
                 logger.info(f"📁 Тема из кэша: {topic_name} (ID: {topic_id})")
             else:
                 # Пытаемся получить название через официальный API
-                logger.info(f"🔍 Запрашиваю название для темы ID: {topic_id}")
                 real_name = await tg_client.get_topic_name(message.chat_id, topic_id)
-                
+
                 if real_name:
                     topic_name = sanitize_folder_name(real_name)
                     topic_cache[topic_id_str] = topic_name
