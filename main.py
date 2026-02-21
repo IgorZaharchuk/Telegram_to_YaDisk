@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram MTProto Backup to Yandex Disk
-Главный файл проекта с поддержкой StringSession
+Главный файл проекта с поддержкой тем
 """
 
 import os
@@ -26,7 +26,7 @@ PHONE_NUMBER = os.getenv("PHONE_NUMBER", "")
 TARGET_CHAT_ID = int(os.getenv("TARGET_CHAT_ID", 0))
 YA_DISK_TOKEN = os.getenv("YA_DISK_TOKEN", "")
 YA_DISK_PATH = os.getenv("YA_DISK_PATH", "/mtproto_backup")
-STRING_SESSION = os.getenv("STRING_SESSION", None)  # 👈 НОВОЕ!
+STRING_SESSION = os.getenv("STRING_SESSION", None)
 
 MAX_FILES_PER_RUN = int(os.getenv("MAX_FILES_PER_RUN", "50"))
 RATE_LIMIT_DELAY = float(os.getenv("RATE_LIMIT_DELAY", "1.0"))
@@ -91,28 +91,33 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
     temp_files = []
     
     try:
-        # 1. Определяем тему
-        topic_id = None
-        if message.reply_to:
-            topic_id = getattr(message.reply_to, 'reply_to_top_id', None) or message.reply_to.reply_to_msg_id
-        
+        # 1. Определяем тему по официальной документации
+        topic_id = tg_client.get_topic_id_from_message(message)
         topic_name = "general"
-        
+
         if topic_id:
             topic_id_str = str(topic_id)
+            
+            # Проверяем кэш
             if topic_id_str in topic_cache:
                 topic_name = topic_cache[topic_id_str]
-                logger.info(f"📁 Тема (кэш): {topic_name}")
+                logger.info(f"📁 Тема из кэша: {topic_name} (ID: {topic_id})")
             else:
+                # Пытаемся получить название через официальный API
                 real_name = await tg_client.get_topic_name(message.chat_id, topic_id)
                 if real_name:
                     topic_name = sanitize_folder_name(real_name)
                     topic_cache[topic_id_str] = topic_name
                     save_json(TOPIC_CACHE_FILE, topic_cache)
-                    logger.info(f"📁 Тема: {real_name}")
+                    logger.info(f"📁 Найдена тема: {real_name} (ID: {topic_id})")
                 else:
+                    # Если не удалось, используем ID
                     topic_name = f"topic_{topic_id}"
-                    logger.warning(f"⚠️ Тема не найдена, использую {topic_name}")
+                    topic_cache[topic_id_str] = topic_name
+                    save_json(TOPIC_CACHE_FILE, topic_cache)
+                    logger.info(f"📁 Использую ID темы: {topic_name}")
+        else:
+            logger.info("📁 Сообщение вне темы (general)")
         
         # 2. Определяем тип файла и имя
         filename = None
@@ -233,7 +238,7 @@ async def main():
     tg_client = TelegramDownloader(
         api_id=API_ID, 
         api_hash=API_HASH,
-        session_string=STRING_SESSION  # 👈 Передаём строку сессии
+        session_string=STRING_SESSION
     )
     
     try:
