@@ -2,8 +2,8 @@ name: MTProto Telegram Backup
 
 on:
   schedule:
-    - cron: '0 */6 * * *'  # Каждые 6 часов
-  workflow_dispatch:        # Ручной запуск
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
 
 jobs:
   backup:
@@ -24,7 +24,15 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
       
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          # 👇 ПРОВЕРКА УСТАНОВЛЕННЫХ ПАКЕТОВ (как в первом проекте)
+          echo "✅ Установленные пакеты:"
+          pip list | grep -E "telethon|yadisk|Pillow"
+          python -c "import telethon; print(f'✅ telethon version: {telethon.__version__}')"
+          python -c "import yadisk; print(f'✅ yadisk version: {yadisk.__version__}')"
+          python -c "from PIL import Image; print(f'✅ pillow version: {Image.__version__}')"
       
       - name: Run backup
         env:
@@ -41,7 +49,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add progress.json topic_cache.json 2>/dev/null || true
+          git add progress.json topic_cache.json user_session.session 2>/dev/null || true
           git commit -m "Update: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" || exit 0
           git pull origin main --no-edit || true
           git push
