@@ -1,8 +1,8 @@
 name: MTProto Telegram Backup
 
 on:
-  #schedule:
-  #  - cron: '0 */6 * * *'
+  schedule:
+    - cron: '0 */6 * * *'
   workflow_dispatch:
 
 jobs:
@@ -27,7 +27,6 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
-          # 👇 ПРОВЕРКА УСТАНОВЛЕННЫХ ПАКЕТОВ (как в первом проекте)
           echo "✅ Установленные пакеты:"
           pip list | grep -E "telethon|yadisk|Pillow"
           python -c "import telethon; print(f'✅ telethon version: {telethon.__version__}')"
@@ -43,13 +42,14 @@ jobs:
           YA_DISK_TOKEN: ${{ secrets.YA_DISK_TOKEN }}
           YA_DISK_PATH: ${{ secrets.YA_DISK_PATH || '/mtproto_backup' }}
           MAX_FILES_PER_RUN: ${{ secrets.MAX_FILES_PER_RUN || '50' }}
+          STRING_SESSION: ${{ secrets.STRING_SESSION }}  # 👈 НОВОЕ!
         run: python main.py
       
       - name: Save progress
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add progress.json topic_cache.json user_session.session 2>/dev/null || true
+          git add progress.json topic_cache.json 2>/dev/null || true
           git commit -m "Update: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" || exit 0
           git pull origin main --no-edit || true
           git push
