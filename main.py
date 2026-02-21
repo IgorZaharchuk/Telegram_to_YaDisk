@@ -10,7 +10,10 @@ import json
 import asyncio
 import logging
 import tempfile
+import shutil
+import subprocess
 from pathlib import Path
+from datetime import datetime
 
 from telegram_client import TelegramDownloader
 from compress import optimize_image, compress_video
@@ -88,7 +91,11 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
     
     try:
         # 1. Определяем тему
-        topic_id = message.reply_to.reply_to_msg_id if message.reply_to else None
+        topic_id = None
+        if message.reply_to:
+            # Для сообщений в темах [citation:3]
+            topic_id = getattr(message.reply_to, 'reply_to_top_id', None) or message.reply_to.reply_to_msg_id
+        
         topic_name = "general"
         
         if topic_id:
@@ -148,6 +155,7 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
             temp_path = tmp.name
             temp_files.append(temp_path)
         
+        logger.info(f"📥 Скачивание: {filename} ({topic_name})")
         await tg_client.download_media(message, temp_path)
         
         # 4. Сжимаем если нужно
@@ -233,10 +241,9 @@ async def main():
             
             logger.info(f"📥 Поиск новых сообщений (с ID > {last_id})")
             
-            # Получаем итератор сообщений (без await - это синхронный метод)
-            messages = tg_client.get_messages(TARGET_CHAT_ID, min_id=last_id)
+            # Получаем асинхронный итератор сообщений
+            messages = await tg_client.get_messages(TARGET_CHAT_ID, min_id=last_id)
             
-            # Используем в async for (итератор сам работает с asyncio)
             async for message in messages:
                 if message.id <= last_id:
                     continue
@@ -264,6 +271,8 @@ async def main():
         
     except Exception as e:
         logger.error(f"❌ Критическая ошибка: {e}")
+        import traceback
+        traceback.print_exc()
         return 1
     finally:
         await tg_client.disconnect()
