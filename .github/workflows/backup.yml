@@ -1,0 +1,47 @@
+name: MTProto Telegram Backup
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Каждые 6 часов
+  workflow_dispatch:        # Ручной запуск
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+      
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      
+      - name: Run backup
+        env:
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          PHONE_NUMBER: ${{ secrets.PHONE_NUMBER }}
+          TARGET_CHAT_ID: ${{ secrets.TARGET_CHAT_ID }}
+          YA_DISK_TOKEN: ${{ secrets.YA_DISK_TOKEN }}
+          YA_DISK_PATH: ${{ secrets.YA_DISK_PATH || '/mtproto_backup' }}
+          MAX_FILES_PER_RUN: ${{ secrets.MAX_FILES_PER_RUN || '50' }}
+        run: python main.py
+      
+      - name: Save progress
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add progress.json topic_cache.json 2>/dev/null || true
+          git commit -m "Update: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" || exit 0
+          git pull origin main --no-edit || true
+          git push
