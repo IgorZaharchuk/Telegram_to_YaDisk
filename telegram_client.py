@@ -1,9 +1,6 @@
 """
 Telegram клиент на базе Telethon
-ОСНОВАНО НА РЕАЛЬНЫХ ПРОЕКТАХ:
-- https://github.com/leo-cunes/telegram-topic-ids-extractor
-- https://stackoverflow.com/questions/79157818/
-- https://tl.telethon.dev/methods/channels/get_forum_topics_by_id.html
+Исправленная версия с правильным методом для тем
 """
 
 from telethon import TelegramClient, functions, types
@@ -68,57 +65,39 @@ class TelegramDownloader:
     async def get_topic_name(self, chat_id: int, topic_id: int) -> str | None:
         """
         Получение названия темы по ID
-        Источник: https://tl.telethon.dev/methods/channels/get_forum_topics_by_id.html
+        Альтернативный подход через GetForumTopicsRequest
         """
         try:
             logger.debug(f"get_topic_name: chat_id={chat_id}, topic_id={topic_id}")
             
             # Получаем входной объект канала
             channel = await self.client.get_input_entity(chat_id)
-            logger.debug(f"Channel input entity: {type(channel)}")
             
-            # Вызываем API метод
-            logger.debug(f"Calling functions.channels.GetForumTopicsByIDRequest with topics=[{topic_id}]")
-            result = await self.client(functions.channels.GetForumTopicsByIDRequest(
+            # Используем GetForumTopicsRequest для получения ВСЕХ тем
+            # и потом фильтруем по ID
+            result = await self.client(functions.channels.GetForumTopicsRequest(
                 channel=channel,
-                topics=[topic_id]
+                offset_date=None,
+                offset_id=0,
+                offset_topic=0,
+                limit=100
             ))
             
-            # Анализируем результат
-            logger.debug(f"Result type: {type(result)}")
-            logger.debug(f"Result dir: {dir(result)}")
+            # Ищем нужную тему по ID
+            if hasattr(result, 'topics') and result.topics:
+                for topic in result.topics:
+                    if hasattr(topic, 'id') and topic.id == topic_id:
+                        if hasattr(topic, 'title'):
+                            topic_title = topic.title
+                            logger.info(f"✅ Найдено название темы: {topic_title}")
+                            return topic_title
+                        else:
+                            logger.warning(f"⚠️ Тема найдена, но нет атрибута title")
+                            # Пробуем другие атрибуты
+                            logger.debug(f"Topic attributes: {dir(topic)}")
             
-            # Проверяем наличие атрибута topics
-            if hasattr(result, 'topics'):
-                logger.debug(f"result.topics type: {type(result.topics)}")
-                logger.debug(f"result.topics length: {len(result.topics)}")
-                
-                if result.topics and len(result.topics) > 0:
-                    topic = result.topics[0]
-                    logger.debug(f"Topic type: {type(topic)}")
-                    logger.debug(f"Topic dir: {dir(topic)}")
-                    
-                    # Проверяем наличие атрибута title
-                    if hasattr(topic, 'title'):
-                        topic_title = topic.title
-                        logger.info(f"✅ Найдено название темы: {topic_title}")
-                        return topic_title
-                    else:
-                        logger.warning(f"⚠️ Тема не имеет атрибута title")
-                        # Пробуем найти название в других атрибутах
-                        for attr in dir(topic):
-                            if not attr.startswith('_'):
-                                logger.debug(f"Topic attribute: {attr} = {getattr(topic, attr)}")
-                else:
-                    logger.warning(f"⚠️ result.topics пуст")
-            else:
-                logger.warning(f"⚠️ Результат не имеет атрибута topics")
-                
-                # Пробуем найти название в самом результате
-                if hasattr(result, 'title'):
-                    logger.info(f"✅ Найдено название в result.title: {result.title}")
-                    return result.title
-                    
+            logger.warning(f"⚠️ Тема с ID {topic_id} не найдена среди {len(result.topics)} тем")
+            
         except Exception as e:
             logger.error(f"❌ Ошибка получения названия темы {topic_id}: {e}", exc_info=True)
         
@@ -126,8 +105,7 @@ class TelegramDownloader:
     
     async def get_all_topics(self, chat_id: int):
         """
-        Получение ВСЕХ тем чата (как в проекте telegram-topic-ids-extractor)
-        Источник: https://github.com/leo-cunes/telegram-topic-ids-extractor
+        Получение ВСЕХ тем чата
         """
         try:
             channel = await self.client.get_input_entity(chat_id)
