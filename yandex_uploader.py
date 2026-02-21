@@ -1,6 +1,6 @@
 """
 Загрузка файлов на Яндекс.Диск
-Полностью скопировано из первого рабочего проекта
+Исправленная версия с правильной обработкой папок
 """
 
 import os
@@ -25,15 +25,34 @@ class YandexUploader:
         await self.client.__aenter__()
         
         # Создаём корневую папку если нет
-        if not await self.client.exists(self.base_path):
-            await self.client.mkdir(self.base_path)
-            logger.info(f"✅ Создана корневая папка {self.base_path}")
+        try:
+            if not await self.client.exists(self.base_path):
+                await self.client.mkdir(self.base_path)
+                logger.info(f"✅ Создана корневая папка {self.base_path}")
+        except Exception as e:
+            logger.error(f"⚠️ Ошибка при создании корневой папки: {e}")
         
         return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Выход из контекстного менеджера"""
         await self.client.__aexit__(exc_type, exc_val, exc_tb)
+    
+    async def _ensure_dir(self, remote_dir: str) -> bool:
+        """
+        Убедиться, что папка существует (создать если нет)
+        :param remote_dir: Путь к папке
+        :return: Успех операции
+        """
+        try:
+            if not await self.client.exists(remote_dir):
+                await self.client.mkdir(remote_dir)
+                logger.info(f"✅ Создана папка: {remote_dir}")
+                return True
+            return True
+        except Exception as e:
+            logger.error(f"❌ Не удалось создать папку {remote_dir}: {e}")
+            return False
     
     async def _get_unique_path(self, remote_dir: str, filename: str) -> str:
         """
@@ -44,18 +63,25 @@ class YandexUploader:
         """
         remote_path = f"{remote_dir}/{filename}"
         
-        if not await self.client.exists(remote_path):
-            return remote_path
+        try:
+            if not await self.client.exists(remote_path):
+                return remote_path
+        except Exception:
+            return remote_path  # Если ошибка проверки, пробуем загрузить
         
         base, ext = os.path.splitext(filename)
         counter = 1
-        while await self.client.exists(f"{remote_dir}/{base}_{counter}{ext}"):
+        while True:
+            new_path = f"{remote_dir}/{base}_{counter}{ext}"
+            try:
+                if not await self.client.exists(new_path):
+                    return new_path
+            except Exception:
+                return new_path
             counter += 1
             if counter > 1000:
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                 return f"{remote_dir}/{base}_{timestamp}{ext}"
-        
-        return f"{remote_dir}/{base}_{counter}{ext}"
     
     async def upload(self, local_path: str, remote_dir: str, filename: str) -> bool:
         """
@@ -66,12 +92,13 @@ class YandexUploader:
         :return: Успех загрузки
         """
         try:
-            # Создаём папку если нужно
-            if not await self.client.exists(remote_dir):
-                await self.client.mkdir(remote_dir)
-                logger.info(f"✅ Создана папка: {remote_dir}")
+            # Убеждаемся, что папка существует
+            if not await self._ensure_dir(remote_dir):
+                # Если не удалось создать папку, пробуем загрузить напрямую
+                logger.warning(f"⚠️ Не удалось создать папку, пробую загрузить в корень")
+                remote_dir = self.base_path
             
-            # Получаем уникальный путь
+            # Получаем уникальный путь для файла
             remote_path = await self._get_unique_path(remote_dir, filename)
             
             # Загружаем файл
