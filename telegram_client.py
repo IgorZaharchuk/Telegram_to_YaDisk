@@ -1,9 +1,11 @@
 """
 Telegram клиент на базе Telethon
-Исправленная версия с правильным методом для тем
+ОСНОВАНО НА ОФИЦИАЛЬНОЙ ДОКУМЕНТАЦИИ:
+https://tl.telethon.dev/methods/channels/get_forum_topics_by_id.html
 """
 
-from telethon import TelegramClient, functions, types
+from telethon import TelegramClient, types
+from telethon.tl.functions.channels import GetForumTopicsByIDRequest  # 👈 ПРАВИЛЬНЫЙ ИМПОРТ!
 from telethon.sessions import StringSession
 import logging
 
@@ -47,12 +49,12 @@ class TelegramDownloader:
     def get_topic_id_from_message(self, message):
         """
         Получение ID темы из сообщения
-        Источник: https://stackoverflow.com/a/79158221
+        Источник: https://stackoverflow.com/questions/79157818/
         """
         if not message.reply_to:
             return None
         
-        # Проверяем, является ли сообщение частью форума
+        # Согласно документации, сообщения в темах имеют forum_topic=True
         if hasattr(message.reply_to, 'forum_topic') and message.reply_to.forum_topic:
             # Приоритет: reply_to_top_id (если это ответ), иначе reply_to_msg_id
             if hasattr(message.reply_to, 'reply_to_top_id') and message.reply_to.reply_to_top_id:
@@ -65,84 +67,38 @@ class TelegramDownloader:
     async def get_topic_name(self, chat_id: int, topic_id: int) -> str | None:
         """
         Получение названия темы по ID
-        Альтернативный подход через GetForumTopicsRequest
+        Официальная документация: https://tl.telethon.dev/methods/channels/get_forum_topics_by_id.html
         """
         try:
-            logger.debug(f"get_topic_name: chat_id={chat_id}, topic_id={topic_id}")
+            logger.info(f"🔍 Запрашиваю название для темы ID: {topic_id}")
             
             # Получаем входной объект канала
             channel = await self.client.get_input_entity(chat_id)
             
-            # Используем GetForumTopicsRequest для получения ВСЕХ тем
-            # и потом фильтруем по ID
-            result = await self.client(functions.channels.GetForumTopicsRequest(
+            # ПРАВИЛЬНЫЙ МЕТОД ИЗ ДОКУМЕНТАЦИИ
+            result = await self.client(GetForumTopicsByIDRequest(
                 channel=channel,
-                offset_date=None,
-                offset_id=0,
-                offset_topic=0,
-                limit=100
+                topics=[topic_id]  # список целых чисел
             ))
             
-            # Ищем нужную тему по ID
-            if hasattr(result, 'topics') and result.topics:
-                for topic in result.topics:
-                    if hasattr(topic, 'id') and topic.id == topic_id:
-                        if hasattr(topic, 'title'):
-                            topic_title = topic.title
-                            logger.info(f"✅ Найдено название темы: {topic_title}")
-                            return topic_title
-                        else:
-                            logger.warning(f"⚠️ Тема найдена, но нет атрибута title")
-                            # Пробуем другие атрибуты
-                            logger.debug(f"Topic attributes: {dir(topic)}")
-            
-            logger.warning(f"⚠️ Тема с ID {topic_id} не найдена среди {len(result.topics)} тем")
-            
+            # Проверяем результат
+            if result and hasattr(result, 'topics') and result.topics:
+                topic = result.topics[0]
+                if hasattr(topic, 'title'):
+                    topic_title = topic.title
+                    logger.info(f"✅ Найдено название темы: {topic_title}")
+                    return topic_title
+                else:
+                    logger.warning(f"⚠️ Тема не имеет атрибута title")
+                    # Пробуем другие атрибуты
+                    logger.debug(f"Topic attributes: {dir(topic)}")
+            else:
+                logger.warning(f"⚠️ topics пуст или отсутствует")
+                    
         except Exception as e:
             logger.error(f"❌ Ошибка получения названия темы {topic_id}: {e}", exc_info=True)
         
         return None
-    
-    async def get_all_topics(self, chat_id: int):
-        """
-        Получение ВСЕХ тем чата
-        """
-        try:
-            channel = await self.client.get_input_entity(chat_id)
-            topics = []
-            offset_date = None
-            offset_id = 0
-            offset_topic = 0
-            
-            while True:
-                result = await self.client(functions.channels.GetForumTopicsRequest(
-                    channel=channel,
-                    offset_date=offset_date,
-                    offset_id=offset_id,
-                    offset_topic=offset_topic,
-                    limit=100
-                ))
-                
-                if not result.topics:
-                    break
-                
-                topics.extend(result.topics)
-                
-                last = result.topics[-1]
-                offset_topic = last.id
-                offset_id = last.top_message
-                
-                # Находим дату последнего сообщения
-                for msg in result.messages:
-                    if msg.id == offset_id:
-                        offset_date = msg.date
-                        break
-                        
-            return topics
-            
-        except Exception as e:
-            logger.error(f"Ошибка получения всех тем: {e}")
-            return []
     
     async def get_messages(self, chat_id: int, min_id: int = 0, reverse: bool = True):
         """Получение сообщений из чата"""
