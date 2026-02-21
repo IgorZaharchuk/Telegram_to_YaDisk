@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 QR-логин для Telegram с поддержкой двухфакторной аутентификации
-
+ИСПРАВЛЕННАЯ ВЕРСИЯ
 """
 
 import asyncio
@@ -57,23 +57,24 @@ async def qr_login():
         print("\n⏳ Ожидание сканирования (60 секунд)...")
         
         try:
-            # Ждем сканирования
-            user = await qr_login.wait(60)
+            # Ждем сканирования - это может выбросить SessionPasswordNeededError
+            await qr_login.wait(60)
             
-            print("\n✅ QR-код отсканирован!")
+        except SessionPasswordNeededError:
+            # Если требуется пароль, запрашиваем его
+            print("\n🔐 Требуется пароль двухфакторной аутентификации")
+            password = getpass.getpass("Введите ваш пароль Telegram: ")
             
-            # Проверяем, не нужен ли пароль
-            if not await client.is_user_authorized():
-                print("\n🔐 Требуется пароль двухфакторной аутентификации")
-                
-                # Запрашиваем пароль (безопасно, не отображается при вводе)
-                password = getpass.getpass("Введите ваш пароль Telegram: ")
-                
-                # Входим с паролем
-                await client.sign_in(password=password)
-                print("✅ Пароль принят!")
+            # Входим с паролем
+            await client.sign_in(password=password)
+            print("✅ Пароль принят!")
             
-            # Получаем информацию о пользователе
+        except asyncio.TimeoutError:
+            print("\n❌ Таймаут. Попробуй еще раз")
+            return
+        
+        # После успешной авторизации получаем информацию о пользователе
+        if await client.is_user_authorized():
             me = await client.get_me()
             print(f"\n✅ Успешная авторизация!")
             print(f"   Пользователь: {me.first_name} (@{me.username})")
@@ -84,11 +85,8 @@ async def qr_login():
             session_string = client.session.save()
             print(f"\n🔐 СОХРАНИ ЭТУ СТРОКУ В SECRETS:")
             print(f"STRING_SESSION={session_string}")
-            
-        except asyncio.TimeoutError:
-            print("\n❌ Таймаут. Попробуй еще раз")
-        except SessionPasswordNeededError:
-            print("\n❌ Ошибка: нужен пароль, но мы его уже обработали")
+        else:
+            print("\n❌ Что-то пошло не так - авторизация не удалась")
             
     except Exception as e:
         print(f"\n❌ Ошибка: {e}")
