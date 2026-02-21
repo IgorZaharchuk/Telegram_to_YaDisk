@@ -1,1 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
 
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+
+# Project files
+*.log
+*.session
+*.session-journal
+.env
+
+# Не игнорируем progress.json и topic_cache.json - их нужно коммитить!
+# progress.json
+# topic_cache.json
