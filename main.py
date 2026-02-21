@@ -233,7 +233,11 @@ async def main():
             
             logger.info(f"📥 Поиск новых сообщений (с ID > {last_id})")
             
-            async for message in await tg_client.get_messages(TARGET_CHAT_ID, min_id=last_id):
+            # Получаем итератор сообщений (без await - это синхронный метод)
+            messages = tg_client.get_messages(TARGET_CHAT_ID, min_id=last_id)
+            
+            # Используем в async for (итератор сам работает с asyncio)
+            async for message in messages:
                 if message.id <= last_id:
                     continue
                 
