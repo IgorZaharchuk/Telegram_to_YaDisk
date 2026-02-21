@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 QR-логин для Telegram с поддержкой двухфакторной аутентификации
+
 """
 
 import asyncio
