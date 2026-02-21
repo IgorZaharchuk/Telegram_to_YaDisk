@@ -17,6 +17,7 @@ ENV/
 *.session
 *.session-journal
 .env
+user_session.session
 
 # Не игнорируем progress.json и topic_cache.json - их нужно коммитить!
 # progress.json
