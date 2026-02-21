@@ -1,11 +1,11 @@
 """
 Telegram клиент на базе Telethon
-Исправленная версия с правильными типами для GetForumTopicsByIDRequest
+ОСНОВАНО НА ОФИЦИАЛЬНОЙ ДОКУМЕНТАЦИИ:
+- https://tl.telethon.dev/methods/channels/get_forum_topics_by_id.html
+- https://stackoverflow.com/questions/79157818/
 """
 
-from telethon import TelegramClient
-from telethon.tl.functions.channels import GetForumTopicsByIDRequest
-from telethon.tl.types import InputChannel
+from telethon import TelegramClient, functions  # Правильный импорт!
 import logging
 
 logger = logging.getLogger(__name__)
@@ -38,36 +38,35 @@ class TelegramDownloader:
     async def get_topic_name(self, chat_id: int, topic_id: int) -> str | None:
         """
         Получение человеческого названия темы
-        Согласно документации: https://tl.telethon.dev/methods/channels/get_forum_topics_by_id.html
+        ИСТОЧНИК: https://tl.telethon.dev/methods/channels/get_forum_topics_by_id.html
+        и https://stackoverflow.com/a/79158221
         """
         try:
-            # Получаем InputChannel (правильный тип для API)
-            chat = await self.client.get_input_entity(chat_id)
+            # Получаем InputChannel (как в документации)
+            channel = await self.client.get_input_entity(chat_id)
             
-            # topics должен быть списком int
-            result = await self.client(GetForumTopicsByIDRequest(
-                channel=chat,
+            # ТОЧНО КАК В ДОКУМЕНТАЦИИ: client(functions.channels.GetForumTopicsByIDRequest(...))
+            result = await self.client(functions.channels.GetForumTopicsByIDRequest(
+                channel=channel,
                 topics=[topic_id]  # список целых чисел
             ))
             
-            if result.topics and len(result.topics) > 0:
-                # Название темы в поле title [citation:4]
-                return result.topics[0].title
+            # Извлекаем название из первого топика (поле title)
+            if result and result.topics and len(result.topics) > 0:
+                topic_title = result.topics[0].title
+                logger.info(f"📁 Получено название темы: {topic_title}")
+                return topic_title
                 
         except Exception as e:
             logger.debug(f"Не удалось получить название темы {topic_id}: {e}")
         return None
     
     async def get_messages(self, chat_id: int, min_id: int = 0, reverse: bool = True):
-        """
-        Получение сообщений из чата
-        Возвращает асинхронный итератор
-        """
+        """Получение сообщений из чата (асинхронный итератор)"""
         chat = await self.get_chat(chat_id)
-        # iter_messages возвращает AsyncIterator, можно использовать async for
         return self.client.iter_messages(chat, min_id=min_id, reverse=reverse)
     
     async def download_media(self, message, path: str) -> str:
-        """Скачивание медиафайла из сообщения"""
+        """Скачивание медиафайла"""
         logger.info(f"📥 Скачивание: {path}")
         return await self.client.download_media(message, path)
