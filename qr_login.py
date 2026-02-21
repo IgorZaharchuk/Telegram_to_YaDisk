@@ -1,33 +1,32 @@
 #!/usr/bin/env python3
 """
-QR-логин для Telegram
-Исправленная версия
+QR-логин для Telegram с поддержкой двухфакторной аутентификации
 """
 
 import asyncio
 import os
 import sys
+import getpass
 
-# Проверяем наличие библиотек
 try:
     import qrcode
     from telethon import TelegramClient
     from telethon.sessions import StringSession
+    from telethon.errors import SessionPasswordNeededError
 except ImportError as e:
     print(f"❌ Ошибка: {e}")
     print("Установите зависимости:")
     print("pip install qrcode[pil] telethon")
     sys.exit(1)
 
-# Ваши данные из .env или вставьте вручную
+# Ваши данные
 API_ID = int(os.getenv("API_ID", 38713310))
-API_HASH = os.getenv("API_HASH", "d5bf6522bb54a8165991b066d898f90c")  # ваш hash
+API_HASH = os.getenv("API_HASH", "ваш_api_hash")
 
 async def qr_login():
     print("🚀 Запуск QR-логина...")
     print(f"API_ID: {API_ID}")
     
-    # Создаем клиент с временной сессией
     client = TelegramClient(StringSession(), API_ID, API_HASH)
     
     try:
@@ -36,7 +35,7 @@ async def qr_login():
         if await client.is_user_authorized():
             print("✅ Уже авторизован!")
             me = await client.get_me()
-            print(f"   Пользователь: {me.first_name} (@{me.username}")
+            print(f"   Пользователь: {me.first_name} (@{me.username})")
             return
         
         print("\n📱 Запускаю QR-логин...")
@@ -48,24 +47,37 @@ async def qr_login():
         # Получаем QR-логин объект
         qr_login = await client.qr_login()
         
+        # Показываем QR-код
+        qr = qrcode.QRCode(box_size=2, border=1)
+        qr.add_data(qr_login.url)
+        qr.print_ascii(invert=True)
+        
+        print(f"\n🔗 Или открой ссылку: {qr_login.url}")
+        print("\n⏳ Ожидание сканирования (60 секунд)...")
+        
         try:
-            # Показываем QR-код
-            qr = qrcode.QRCode(box_size=2, border=1)
-            qr.add_data(qr_login.url)
-            qr.print_ascii(invert=True)
-            
-            print(f"\n🔗 Или открой ссылку: {qr_login.url}")
-            print("\n⏳ Ожидание сканирования (60 секунд)...")
-            
             # Ждем сканирования
-            await qr_login.wait(60)
+            user = await qr_login.wait(60)
             
-            print("\n✅ QR-код отсканирован! Авторизация успешна!")
+            print("\n✅ QR-код отсканирован!")
+            
+            # Проверяем, не нужен ли пароль
+            if not await client.is_user_authorized():
+                print("\n🔐 Требуется пароль двухфакторной аутентификации")
+                
+                # Запрашиваем пароль (безопасно, не отображается при вводе)
+                password = getpass.getpass("Введите ваш пароль Telegram: ")
+                
+                # Входим с паролем
+                await client.sign_in(password=password)
+                print("✅ Пароль принят!")
             
             # Получаем информацию о пользователе
             me = await client.get_me()
-            print(f"   Пользователь: {me.first_name} (@{me.username}")
+            print(f"\n✅ Успешная авторизация!")
+            print(f"   Пользователь: {me.first_name} (@{me.username})")
             print(f"   ID: {me.id}")
+            print(f"   Телефон: {me.phone}")
             
             # Сохраняем строку сессии
             session_string = client.session.save()
@@ -74,6 +86,8 @@ async def qr_login():
             
         except asyncio.TimeoutError:
             print("\n❌ Таймаут. Попробуй еще раз")
+        except SessionPasswordNeededError:
+            print("\n❌ Ошибка: нужен пароль, но мы его уже обработали")
             
     except Exception as e:
         print(f"\n❌ Ошибка: {e}")
