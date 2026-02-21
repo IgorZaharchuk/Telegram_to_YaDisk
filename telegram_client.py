@@ -71,33 +71,56 @@ class TelegramDownloader:
         Источник: https://tl.telethon.dev/methods/channels/get_forum_topics_by_id.html
         """
         try:
-            channel = await self.client.get_input_entity(chat_id)
+            logger.debug(f"get_topic_name: chat_id={chat_id}, topic_id={topic_id}")
             
-            # ТОЧНО КАК В ДОКУМЕНТАЦИИ И ПРИМЕРАХ
+            # Получаем входной объект канала
+            channel = await self.client.get_input_entity(chat_id)
+            logger.debug(f"Channel input entity: {type(channel)}")
+            
+            # Вызываем API метод
+            logger.debug(f"Calling functions.channels.GetForumTopicsByIDRequest with topics=[{topic_id}]")
             result = await self.client(functions.channels.GetForumTopicsByIDRequest(
                 channel=channel,
-                topics=[topic_id]  # список целых чисел
+                topics=[topic_id]
             ))
             
-            # Проверяем структуру ответа
-            if result:
-                logger.debug(f"Result type: {type(result)}")
-                logger.debug(f"Result attributes: {dir(result)}")
+            # Анализируем результат
+            logger.debug(f"Result type: {type(result)}")
+            logger.debug(f"Result dir: {dir(result)}")
+            
+            # Проверяем наличие атрибута topics
+            if hasattr(result, 'topics'):
+                logger.debug(f"result.topics type: {type(result.topics)}")
+                logger.debug(f"result.topics length: {len(result.topics)}")
                 
-                # В официальной документации: result.topics[0].title
-                if hasattr(result, 'topics') and result.topics and len(result.topics) > 0:
+                if result.topics and len(result.topics) > 0:
                     topic = result.topics[0]
+                    logger.debug(f"Topic type: {type(topic)}")
+                    logger.debug(f"Topic dir: {dir(topic)}")
+                    
+                    # Проверяем наличие атрибута title
                     if hasattr(topic, 'title'):
                         topic_title = topic.title
                         logger.info(f"✅ Найдено название темы: {topic_title}")
                         return topic_title
+                    else:
+                        logger.warning(f"⚠️ Тема не имеет атрибута title")
+                        # Пробуем найти название в других атрибутах
+                        for attr in dir(topic):
+                            if not attr.startswith('_'):
+                                logger.debug(f"Topic attribute: {attr} = {getattr(topic, attr)}")
+                else:
+                    logger.warning(f"⚠️ result.topics пуст")
+            else:
+                logger.warning(f"⚠️ Результат не имеет атрибута topics")
                 
-                # Альтернативный вариант из примеров
-                if hasattr(result, 'topics'):
-                    logger.debug(f"Topics count: {len(result.topics)}")
+                # Пробуем найти название в самом результате
+                if hasattr(result, 'title'):
+                    logger.info(f"✅ Найдено название в result.title: {result.title}")
+                    return result.title
                     
         except Exception as e:
-            logger.debug(f"Ошибка получения названия темы {topic_id}: {e}")
+            logger.error(f"❌ Ошибка получения названия темы {topic_id}: {e}", exc_info=True)
         
         return None
     
