@@ -4,7 +4,7 @@ Telegram клиент на базе Telethon
 """
 
 from telethon import TelegramClient
-from telethon.tl.functions.channels import GetForumTopicsByIDRequest  # 👈 ПРАВИЛЬНЫЙ ИМПОРТ
+from telethon.tl.functions.channels import GetForumTopicsByIDRequest
 import logging
 
 logger = logging.getLogger(__name__)
@@ -18,17 +18,20 @@ class TelegramDownloader:
         self.client = None
     
     async def connect(self):
+        """Подключение к Telegram"""
         self.client = TelegramClient(self.session_file, self.api_id, self.api_hash)
         await self.client.start(phone=self.phone)
         logger.info("✅ Подключено к Telegram")
         return self
     
     async def disconnect(self):
+        """Отключение от Telegram"""
         if self.client:
             await self.client.disconnect()
             logger.info("🔒 Отключено от Telegram")
     
     async def get_chat(self, chat_id: int):
+        """Получение информации о чате"""
         return await self.client.get_entity(chat_id)
     
     async def get_topic_name(self, chat_id: int, topic_id: int) -> str | None:
@@ -45,10 +48,17 @@ class TelegramDownloader:
             logger.debug(f"Не удалось получить название темы {topic_id}: {e}")
         return None
     
-    async def get_messages(self, chat_id: int, min_id: int = 0, reverse: bool = True):
-        chat = await self.get_chat(chat_id)
+    def get_messages(self, chat_id: int, min_id: int = 0, reverse: bool = True):
+        """
+        Получение сообщений из чата (синхронный генератор)
+        Возвращает итератор сообщений для использования в async for
+        """
+        # Получаем чат синхронно через client.get_entity
+        # Telethon сам управляет циклом событий
+        chat = self.client.loop.run_until_complete(self.get_chat(chat_id))
         return self.client.iter_messages(chat, min_id=min_id, reverse=reverse)
     
     async def download_media(self, message, path: str) -> str:
+        """Скачивание медиафайла из сообщения"""
         logger.info(f"📥 Скачивание: {path}")
         return await self.client.download_media(message, path)
