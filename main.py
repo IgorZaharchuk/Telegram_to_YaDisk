@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram MTProto Backup to Yandex Disk
-Главный файл проекта
+Главный файл проекта с поддержкой StringSession
 """
 
 import os
@@ -26,6 +26,7 @@ PHONE_NUMBER = os.getenv("PHONE_NUMBER", "")
 TARGET_CHAT_ID = int(os.getenv("TARGET_CHAT_ID", 0))
 YA_DISK_TOKEN = os.getenv("YA_DISK_TOKEN", "")
 YA_DISK_PATH = os.getenv("YA_DISK_PATH", "/mtproto_backup")
+STRING_SESSION = os.getenv("STRING_SESSION", None)  # 👈 НОВОЕ!
 
 MAX_FILES_PER_RUN = int(os.getenv("MAX_FILES_PER_RUN", "50"))
 RATE_LIMIT_DELAY = float(os.getenv("RATE_LIMIT_DELAY", "1.0"))
@@ -93,7 +94,6 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
         # 1. Определяем тему
         topic_id = None
         if message.reply_to:
-            # Для сообщений в темах [citation:3]
             topic_id = getattr(message.reply_to, 'reply_to_top_id', None) or message.reply_to.reply_to_msg_id
         
         topic_name = "general"
@@ -208,10 +208,15 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
 async def main():
     """Основная функция"""
     # Проверка настроек
-    required = [API_ID, API_HASH, PHONE_NUMBER, TARGET_CHAT_ID, YA_DISK_TOKEN]
+    required = [API_ID, API_HASH, TARGET_CHAT_ID, YA_DISK_TOKEN]
     if not all(required):
         logger.error("❌ Не все переменные окружения установлены")
-        logger.error("Нужны: API_ID, API_HASH, PHONE_NUMBER, TARGET_CHAT_ID, YA_DISK_TOKEN")
+        logger.error("Нужны: API_ID, API_HASH, TARGET_CHAT_ID, YA_DISK_TOKEN")
+        return 1
+    
+    # Проверяем наличие сессии (StringSession или телефон)
+    if not STRING_SESSION and not PHONE_NUMBER:
+        logger.error("❌ Нужна либо STRING_SESSION, либо PHONE_NUMBER")
         return 1
     
     logger.info("🚀 Запуск MTProto бэкапа")
@@ -225,7 +230,11 @@ async def main():
     logger.info(f"📊 Прогресс: последний ID {last_id}, всего файлов {total}")
     
     # Подключение к Telegram
-    tg_client = TelegramDownloader(API_ID, API_HASH, PHONE_NUMBER)
+    tg_client = TelegramDownloader(
+        api_id=API_ID, 
+        api_hash=API_HASH,
+        session_string=STRING_SESSION  # 👈 Передаём строку сессии
+    )
     
     try:
         await tg_client.connect()
