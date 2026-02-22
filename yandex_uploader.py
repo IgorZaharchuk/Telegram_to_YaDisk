@@ -1,6 +1,6 @@
 """
 Загрузка файлов на Яндекс.Диск
-Только проверка через listdir() - надежный метод
+Только проверка через listdir() - никаких exists() для файлов
 """
 
 import os
@@ -47,7 +47,7 @@ class YandexUploader:
             logger.error(f"❌ Ошибка при создании папок: {e}")
             return False
     
-    async def file_exists(self, remote_dir: str, filename: str) -> bool:
+    async def check_file_exists_listdir(self, remote_dir: str, filename: str) -> bool:
         """
         ЕДИНСТВЕННЫЙ метод проверки - через listdir()
         """
@@ -82,9 +82,9 @@ class YandexUploader:
                 logger.error(f"❌ Не удалось создать папки {remote_dir}")
                 return False
             
-            # ТОЛЬКО правильная проверка
-            if await self.file_exists(remote_dir, filename):
-                logger.info(f"⏭️ Файл уже существует, пропускаем: {remote_dir}/{filename}")
+            # Проверяем через listdir
+            if await self.check_file_exists_listdir(remote_dir, filename):
+                logger.info(f"⏭️ Файл уже существует (по listdir), пропускаем: {remote_dir}/{filename}")
                 return True
             
             # Загружаем файл
@@ -98,7 +98,7 @@ class YandexUploader:
             return True
             
         except yadisk.exceptions.PathExistsError:
-            # На всякий случай, если API вернет ошибку
+            # На случай, если API вернет ошибку
             logger.info(f"⏭️ Файл уже существует (PathExistsError), пропускаем: {remote_dir}/{filename}")
             return True
         except Exception as e:
