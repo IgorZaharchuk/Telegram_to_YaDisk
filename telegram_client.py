@@ -1,11 +1,11 @@
 """
-Telegram клиент на базе Pyrogram (альтернатива Telethon)
-Метод GetForumTopicsByIDRequest точно работает
+Telegram клиент на базе Pyrogram
+Исправленная версия с правильным названием метода
 """
 
 import os
 from pyrogram import Client
-from pyrogram.raw.functions.channels import GetForumTopicsByIDRequest
+from pyrogram.raw.functions.channels import GetForumTopicsByID  # 👈 ПРАВИЛЬНОЕ НАЗВАНИЕ!
 import logging
 
 logger = logging.getLogger(__name__)
@@ -54,12 +54,11 @@ class TelegramDownloader:
     def get_topic_id_from_message(self, message):
         """
         Получение ID темы из сообщения
-        В Pyrogram сообщения в темах имеют reply_to_top_id
+        В Pyrogram ID темы лежит в message.reply_to_top_id
         """
-        if not message or not message.reply_to_message_id:
+        if not message:
             return None
         
-        # В Pyrogram ID темы лежит в reply_to_top_id
         if hasattr(message, 'reply_to_top_id') and message.reply_to_top_id:
             return message.reply_to_top_id
         
@@ -72,24 +71,26 @@ class TelegramDownloader:
         try:
             logger.info(f"🔍 Запрашиваю название для темы ID: {topic_id}")
             
-            # Получаем входной объект канала
-            chat = await self.client.get_chat(chat_id)
+            # Получаем InputChannel
+            channel = await self.client.resolve_peer(chat_id)
             
-            # Вызываем метод Pyrogram
+            # Вызываем правильный метод Pyrogram
             result = await self.client.invoke(
-                GetForumTopicsByIDRequest(
-                    channel=await self.client.resolve_peer(chat_id),
+                GetForumTopicsByID(  # 👈 БЕЗ "Request" в конце!
+                    channel=channel,
                     topics=[topic_id]
                 )
             )
             
-            # Извлекаем название
-            if result and result.topics and len(result.topics) > 0:
-                topic_title = result.topics[0].title
-                logger.info(f"✅ Найдено название темы: {topic_title}")
-                return topic_title
-            else:
-                logger.warning(f"⚠️ Тема с ID {topic_id} не найдена")
+            # Проверяем результат
+            if result and hasattr(result, 'topics') and result.topics:
+                topic = result.topics[0]
+                if hasattr(topic, 'title'):
+                    topic_title = topic.title
+                    logger.info(f"✅ Найдено название темы: {topic_title}")
+                    return topic_title
+                else:
+                    logger.warning(f"⚠️ Тема не имеет атрибута title")
                     
         except Exception as e:
             logger.error(f"❌ Ошибка получения названия темы {topic_id}: {e}", exc_info=True)
@@ -98,11 +99,12 @@ class TelegramDownloader:
     
     async def get_messages(self, chat_id: int, min_id: int = 0, reverse: bool = True):
         """Получение сообщений из чата"""
-        # В Pyrogram получаем историю сообщений
         messages = []
-        async for message in self.client.get_chat_history(chat_id, offset_id=min_id):
+        async for message in self.client.get_chat_history(chat_id):
             if message.id > min_id:
                 messages.append(message)
+                if reverse:
+                    messages.sort(key=lambda x: x.id)
         return messages
     
     async def download_media(self, message, path: str) -> str:
