@@ -87,7 +87,13 @@ class YandexUploader:
                 if item['type'] == 'file':
                     files.append(item['name'])
             
-            return filename in files
+            # Проверяем точное совпадение имени файла, нормализуя возможные варианты
+            normalized_filename = filename.encode('utf-8').decode('utf-8')
+            for existing_file in files:
+                existing_normalized = existing_file.encode('utf-8').decode('utf-8')
+                if normalized_filename == existing_normalized:
+                    return True
+            return False
         except Exception as e:
             logger.error(f"❌ Ошибка проверки файла: {e}")
             return False
