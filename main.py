@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram MTProto Backup to Yandex Disk
-Главный файл с сохранением прогресса и надежной проверкой файлов
+Главный файл с правильной проверкой файлов через listdir()
 """
 
 import os
@@ -180,10 +180,12 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
         remote_dir = f"{yandex.base_path}/{chat_folder}/{folder_name}"
         safe_filename = sanitize_filename(filename)
         
-        # === ПРОВЕРЯЕМ, ЕСТЬ ЛИ УЖЕ ТАКОЙ ФАЙЛ (через надежный метод) ===
-        if await yandex.file_exists(remote_dir, safe_filename):
-            logger.info(f"⏭️ Файл уже существует на Яндекс.Диске, пропускаем: {remote_dir}/{safe_filename}")
-            return True, 1, message.id
+        # === ПРОВЕРЯЕМ НАЛИЧИЕ ФАЙЛА ТОЛЬКО ЧЕРЕЗ LISTDIR ===
+        file_exists = await yandex.check_file_exists_listdir(remote_dir, safe_filename)
+        
+        if file_exists:
+            logger.info(f"⏭️ Файл уже существует на Яндекс.Диске (проверка listdir), пропускаем: {remote_dir}/{safe_filename}")
+            return True, 1, message.id  # Считаем успешно обработанным для прогресса
         
         # === СКАЧИВАНИЕ ===
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
