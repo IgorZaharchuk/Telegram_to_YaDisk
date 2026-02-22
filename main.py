@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram MTProto Backup to Yandex Disk
-Главный файл проекта для форка Pyrogram с поддержкой тем
+Главный файл с поддержкой тем через raw API
 """
 
 import os
@@ -96,36 +96,28 @@ def save_json(filepath: str, data: dict):
 
 # ==================== ОБРАБОТКА СООБЩЕНИЯ ====================
 async def process_message(tg_client, message, yandex, topic_cache: dict) -> tuple[bool, int]:
-    """Обработка одного сообщения с поддержкой тем из форка Pyrogram"""
+    """Обработка одного сообщения"""
     temp_files = []
     
     try:
-        # === ПОЛУЧЕНИЕ ИНФОРМАЦИИ О ТЕМЕ ===
-        topic_id, topic_name = tg_client.get_topic_info(message)
+        # === ПОЛУЧАЕМ ID ТЕМЫ ИЗ СООБЩЕНИЯ ===
+        topic_id = tg_client.get_topic_id_from_message(message)
+        
+        # === ОПРЕДЕЛЯЕМ НАЗВАНИЕ ПАПКИ ===
         folder_name = "general"
-
+        
         if topic_id:
-            topic_id_str = str(topic_id)
+            # Получаем название темы из кэша (загружен через raw API)
+            topic_name = tg_client.get_topic_name(topic_id)
             
-            # Проверяем кэш
-            if topic_id_str in topic_cache:
-                folder_name = topic_cache[topic_id_str]
-                logger.info(f"📁 Тема из кэша: {folder_name} (ID: {topic_id})")
+            if topic_name:
+                folder_name = sanitize_folder_name(topic_name)
+                logger.info(f"📁 Тема: {topic_name} (ID: {topic_id})")
             else:
-                if topic_name:
-                    # Если есть название из сообщения (форк Pyrogram)
-                    folder_name = sanitize_folder_name(topic_name)
-                    topic_cache[topic_id_str] = folder_name
-                    save_json(TOPIC_CACHE_FILE, topic_cache)
-                    logger.info(f"✅ Найдена тема: {topic_name} (ID: {topic_id})")
-                else:
-                    # Если названия нет, используем ID
-                    folder_name = f"topic_{topic_id}"
-                    topic_cache[topic_id_str] = folder_name
-                    save_json(TOPIC_CACHE_FILE, topic_cache)
-                    logger.info(f"📁 Использую ID темы: {folder_name}")
+                folder_name = f"topic_{topic_id}"
+                logger.info(f"📁 ID темы: {topic_id}")
         else:
-            logger.info("📁 Сообщение вне темы (general)")
+            logger.info("📁 Сообщение вне темы")
         
         # === ОПРЕДЕЛЕНИЕ ТИПА ФАЙЛА ===
         filename = None
@@ -136,19 +128,13 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
             photo_date = message.date.strftime('%Y%m%d_%H%M%S')
             filename = f"photo_{photo_date}.jpg"
             is_image = True
-            logger.debug(f"📸 Обнаружено фото")
             
         elif message.document:
-            logger.debug(f"📄 Обнаружен документ")
-            # Получаем имя файла из атрибутов документа
             if hasattr(message.document, 'file_name'):
                 filename = message.document.file_name
-                logger.debug(f"   Имя файла: {filename}")
             else:
-                # Если нет имени, генерируем из mime_type
                 ext = Path(message.document.mime_type or "").suffix or ".dat"
                 filename = f"document_{message.id}{ext}"
-                logger.debug(f"   Сгенерировано имя: {filename}")
             
             ext = Path(filename).suffix.lower()
             if ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']:
@@ -157,18 +143,14 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
                 is_video = True
         
         elif message.video:
-            logger.debug(f"🎬 Обнаружено видео")
             if hasattr(message.video, 'file_name') and message.video.file_name:
                 filename = message.video.file_name
-                logger.debug(f"   Имя файла: {filename}")
             else:
                 video_date = message.date.strftime('%Y%m%d_%H%M%S')
                 filename = f"video_{video_date}.mp4"
-                logger.debug(f"   Сгенерировано имя: {filename}")
             is_video = True
         
         if not filename:
-            logger.debug("⏭️ Сообщение не содержит медиафайл")
             return False, 0
         
         # === СКАЧИВАНИЕ ===
@@ -190,7 +172,6 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
             if success:
                 final_path = img_path
                 compress_info = info
-                logger.debug(f"   {info}")
         
         elif is_video:
             video_path = temp_path + ".compressed.mp4"
@@ -199,7 +180,6 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
             if success:
                 final_path = video_path
                 compress_info = info
-                logger.debug(f"   {info}")
         
         # === ЗАГРУЗКА НА ЯНДЕКС.ДИСК ===
         chat_title = getattr(message.chat, 'title', str(message.chat.id))
@@ -208,7 +188,6 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
         remote_dir = f"{yandex.base_path}/{chat_folder}/{folder_name}"
         safe_filename = sanitize_filename(filename)
         
-        logger.debug(f"📤 Загрузка на Яндекс.Диск: {remote_dir}/{safe_filename}")
         success = await yandex.upload(final_path, remote_dir, safe_filename)
         
         if success and compress_info:
@@ -218,7 +197,7 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
         return success, 1 if success else 0
         
     except Exception as e:
-        logger.error(f"❌ Ошибка обработки: {e}", exc_info=True)
+        logger.error(f"❌ Ошибка обработки: {e}")
         return False, 0
     
     finally:
@@ -226,7 +205,6 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
             try:
                 if os.path.exists(f):
                     os.unlink(f)
-                    logger.debug(f"🗑️ Удален временный файл: {f}")
             except:
                 pass
 
@@ -236,24 +214,18 @@ async def main():
     # Проверка настроек
     if not API_ID or not API_HASH or not TARGET_CHAT_ID or not YA_DISK_TOKEN:
         logger.error("❌ Не все переменные окружения установлены")
-        logger.error(f"API_ID: {API_ID}")
-        logger.error(f"API_HASH: {'есть' if API_HASH else 'нет'}")
-        logger.error(f"TARGET_CHAT_ID: {TARGET_CHAT_ID}")
-        logger.error(f"YA_DISK_TOKEN: {'есть' if YA_DISK_TOKEN else 'нет'}")
         return 1
     
-    # Проверяем наличие сессии
     if not STRING_SESSION and not PHONE_NUMBER:
         logger.error("❌ Нужна либо STRING_SESSION, либо PHONE_NUMBER")
         return 1
     
     # Загружаем прогресс
     progress = load_json(PROGRESS_FILE, {"last_id": 0, "total": 0})
-    topic_cache = load_json(TOPIC_CACHE_FILE, {})
     last_id = progress.get("last_id", 0)
     total = progress.get("total", 0)
     
-    logger.info("🚀 Запуск MTProto бэкапа с поддержкой тем")
+    logger.info("🚀 Запуск MTProto бэкапа")
     logger.info(f"📊 Прогресс: последний ID {last_id}, всего файлов {total}")
     
     # Подключение к Telegram
@@ -270,7 +242,10 @@ async def main():
         chat = await tg_client.get_chat(TARGET_CHAT_ID)
         chat_id = chat.id
         chat_title = getattr(chat, 'title', str(chat_id))
-        logger.info(f"✅ Чат: {chat_title} (ID: {chat_id})")
+        logger.info(f"✅ Чат: {chat_title}")
+        
+        # Загружаем все темы через raw API
+        all_topics = await tg_client.load_all_topics(chat_id)
         
         # Подключение к Яндекс.Диску
         async with YandexUploader(YA_DISK_TOKEN, YA_DISK_PATH) as yandex:
@@ -288,7 +263,7 @@ async def main():
                 
                 if message.media:
                     logger.info(f"📨 Сообщение {message.id}")
-                    success, count = await process_message(tg_client, message, yandex, topic_cache)
+                    success, count = await process_message(tg_client, message, yandex, {})
                     
                     if success:
                         processed += count
