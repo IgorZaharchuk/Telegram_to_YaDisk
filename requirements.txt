@@ -1,8 +1,8 @@
 # Pyrogram (основная библиотека)
 pyrogram>=2.0.106
 
-# TgCrypto (опционально, для ускорения) - используем правильную версию
-tgcrypto>=1.2.12
+# TgCrypto (правильное название и версия)
+TgCrypto>=1.2.5
 
 # Yandex Disk
 yadisk[async-defaults]>=3.4.0
