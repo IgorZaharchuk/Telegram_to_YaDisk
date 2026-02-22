@@ -23,10 +23,18 @@ from yandex_uploader import YandexUploader
 API_ID = int(os.getenv("API_ID", 0))
 API_HASH = os.getenv("API_HASH", "")
 PHONE_NUMBER = os.getenv("PHONE_NUMBER", "")
-TARGET_CHAT_ID = os.getenv("TARGET_CHAT_ID", "0")  # 👈 Оставляем строкой
 YA_DISK_TOKEN = os.getenv("YA_DISK_TOKEN", "")
 YA_DISK_PATH = os.getenv("YA_DISK_PATH", "/mtproto_backup")
 STRING_SESSION = os.getenv("STRING_SESSION", None)
+
+# 👇 КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: преобразуем TARGET_CHAT_ID в число
+TARGET_CHAT_ID_STR = os.getenv("TARGET_CHAT_ID", "0")
+try:
+    TARGET_CHAT_ID = int(TARGET_CHAT_ID_STR)
+    logger.info(f"✅ TARGET_CHAT_ID преобразован в число: {TARGET_CHAT_ID}")
+except ValueError:
+    logger.error(f"❌ TARGET_CHAT_ID должен быть числом, получено: {TARGET_CHAT_ID_STR}")
+    TARGET_CHAT_ID = 0
 
 MAX_FILES_PER_RUN = int(os.getenv("MAX_FILES_PER_RUN", "50"))
 RATE_LIMIT_DELAY = float(os.getenv("RATE_LIMIT_DELAY", "1.0"))
@@ -220,10 +228,12 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
 async def main():
     """Основная функция"""
     # Проверка настроек
-    required = [API_ID, API_HASH, TARGET_CHAT_ID, YA_DISK_TOKEN]
-    if not all(required):
+    if not API_ID or not API_HASH or not TARGET_CHAT_ID or not YA_DISK_TOKEN:
         logger.error("❌ Не все переменные окружения установлены")
-        logger.error("Нужны: API_ID, API_HASH, TARGET_CHAT_ID, YA_DISK_TOKEN")
+        logger.error(f"API_ID: {API_ID}")
+        logger.error(f"API_HASH: {'есть' if API_HASH else 'нет'}")
+        logger.error(f"TARGET_CHAT_ID: {TARGET_CHAT_ID}")
+        logger.error(f"YA_DISK_TOKEN: {'есть' if YA_DISK_TOKEN else 'нет'}")
         return 1
     
     # Проверяем наличие сессии
@@ -232,6 +242,7 @@ async def main():
         return 1
     
     logger.info("🚀 Запуск MTProto бэкапа")
+    logger.info(f"📊 Прогресс: последний ID {progress.get('last_id', 0)}")
     
     # Загружаем прогресс
     progress = load_json(PROGRESS_FILE, {"last_id": 0, "total": 0})
@@ -251,7 +262,7 @@ async def main():
     try:
         await tg_client.connect()
         
-        # Получаем чат (ID может быть строкой или числом)
+        # Получаем чат (теперь TARGET_CHAT_ID - это число)
         chat = await tg_client.get_chat(TARGET_CHAT_ID)
         chat_id = chat.id
         chat_title = getattr(chat, 'title', str(chat_id))
