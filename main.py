@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram MTProto Backup to Yandex Disk
-Главный файл проекта с поддержкой тем
+Главный файл проекта для Pyrogram
 """
 
 import os
@@ -23,7 +23,7 @@ from yandex_uploader import YandexUploader
 API_ID = int(os.getenv("API_ID", 0))
 API_HASH = os.getenv("API_HASH", "")
 PHONE_NUMBER = os.getenv("PHONE_NUMBER", "")
-TARGET_CHAT_ID = int(os.getenv("TARGET_CHAT_ID", 0))
+TARGET_CHAT_ID = os.getenv("TARGET_CHAT_ID", "0")  # 👈 Оставляем строкой
 YA_DISK_TOKEN = os.getenv("YA_DISK_TOKEN", "")
 YA_DISK_PATH = os.getenv("YA_DISK_PATH", "/mtproto_backup")
 STRING_SESSION = os.getenv("STRING_SESSION", None)
@@ -96,10 +96,8 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
 
         # Отладка
         logger.debug(f"Message ID: {message.id}")
-        if message.reply_to:
-            logger.debug(f"reply_to_top_id: {getattr(message.reply_to, 'reply_to_top_id', None)}")
-            logger.debug(f"reply_to_msg_id: {getattr(message.reply_to, 'reply_to_msg_id', None)}")
-            logger.debug(f"forum_topic: {getattr(message.reply_to, 'forum_topic', False)}")
+        if hasattr(message, 'reply_to_top_id'):
+            logger.debug(f"reply_to_top_id: {message.reply_to_top_id}")
 
         topic_name = "general"
 
@@ -111,8 +109,8 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
                 topic_name = topic_cache[topic_id_str]
                 logger.info(f"📁 Тема из кэша: {topic_name} (ID: {topic_id})")
             else:
-                # Пытаемся получить название через официальный API
-                real_name = await tg_client.get_topic_name(message.chat_id, topic_id)
+                # Пытаемся получить название через API
+                real_name = await tg_client.get_topic_name(message.chat.id, topic_id)
 
                 if real_name:
                     topic_name = sanitize_folder_name(real_name)
@@ -139,11 +137,11 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
             is_image = True
             
         elif message.document:
-            for attr in message.document.attributes:
-                if hasattr(attr, 'file_name'):
-                    filename = attr.file_name
-                    break
-            if not filename:
+            # Получаем имя файла из атрибутов документа
+            if hasattr(message.document, 'file_name'):
+                filename = message.document.file_name
+            else:
+                # Если нет имени, генерируем из mime_type
                 ext = Path(message.document.mime_type or "").suffix or ".dat"
                 filename = f"document_{message.id}{ext}"
             
@@ -164,7 +162,7 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
         if not filename:
             return False, 0
         
-        # 3. Скачиваем (MTProto - нет лимита 20MB!)
+        # 3. Скачиваем
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
             temp_path = tmp.name
             temp_files.append(temp_path)
@@ -193,7 +191,7 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
                 compress_info = info
         
         # 5. Загружаем на Яндекс.Диск
-        chat_title = getattr(message.chat, 'title', str(message.chat_id))
+        chat_title = getattr(message.chat, 'title', str(message.chat.id))
         chat_folder = sanitize_folder_name(chat_title)
         
         remote_dir = f"{yandex.base_path}/{chat_folder}/{topic_name}"
@@ -228,7 +226,7 @@ async def main():
         logger.error("Нужны: API_ID, API_HASH, TARGET_CHAT_ID, YA_DISK_TOKEN")
         return 1
     
-    # Проверяем наличие сессии (StringSession или телефон)
+    # Проверяем наличие сессии
     if not STRING_SESSION and not PHONE_NUMBER:
         logger.error("❌ Нужна либо STRING_SESSION, либо PHONE_NUMBER")
         return 1
@@ -253,9 +251,11 @@ async def main():
     try:
         await tg_client.connect()
         
+        # Получаем чат (ID может быть строкой или числом)
         chat = await tg_client.get_chat(TARGET_CHAT_ID)
-        chat_title = getattr(chat, 'title', str(chat.id))
-        logger.info(f"✅ Чат: {chat_title}")
+        chat_id = chat.id
+        chat_title = getattr(chat, 'title', str(chat_id))
+        logger.info(f"✅ Чат: {chat_title} (ID: {chat_id})")
         
         # Подключение к Яндекс.Диску
         async with YandexUploader(YA_DISK_TOKEN, YA_DISK_PATH) as yandex:
@@ -264,10 +264,10 @@ async def main():
             
             logger.info(f"📥 Поиск новых сообщений (с ID > {last_id})")
             
-            # Получаем асинхронный итератор сообщений
-            messages = await tg_client.get_messages(TARGET_CHAT_ID, min_id=last_id)
+            # Получаем сообщения
+            messages = await tg_client.get_messages(chat_id, min_id=last_id)
             
-            async for message in messages:
+            for message in messages:
                 if message.id <= last_id:
                     continue
                 
