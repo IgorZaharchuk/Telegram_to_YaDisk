@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Создание StringSession для Pyrogram через QR-код
-Исправленная версия
+Правильная версия с использованием on_qr_login
 """
 
 import asyncio
@@ -12,47 +12,55 @@ async def create_session():
     api_id = int(input("Введите API_ID: "))
     api_hash = input("Введите API_HASH: ")
     
-    print("\n📱 Запускаю QR-логин для Pyrogram...")
-    print("1️⃣ Открой Telegram на телефоне")
-    print("2️⃣ Перейди в Настройки → Устройства")
-    print("3️⃣ Нажми 'Сканировать QR-код'")
-    print("4️⃣ Отсканируй QR-код ниже\n")
-    
     # Создаем клиента с пустой строкой сессии
     client = Client(
-        name="pyro_qr_maker",
+        name="pyro_qr_session",
         api_id=api_id,
         api_hash=api_hash,
         in_memory=True
     )
     
-    try:
-        # Запускаем клиент
-        await client.start()
+    # Флаг для отслеживания успешного входа
+    login_success = False
+    qr_url = None
+    
+    @client.on_qr_login()
+    async def qr_login(client, qr_code):
+        nonlocal qr_url
+        qr_url = qr_code.url
         
-        # Получаем QR-код для входа
-        qr_login = await client.qr_login()
+        print("\n📱 QR-код для входа в Telegram:")
+        print("1️⃣ Открой Telegram на телефоне")
+        print("2️⃣ Перейди в Настройки → Устройства")
+        print("3️⃣ Нажми 'Сканировать QR-код'")
+        print("4️⃣ Отсканируй QR-код ниже\n")
         
         # Показываем QR-код
         qr = qrcode.QRCode(box_size=2, border=1)
-        qr.add_data(qr_login.url)
+        qr.add_data(qr_url)
         qr.print_ascii(invert=True)
+        print(f"\n🔗 Или открой ссылку: {qr_url}")
+    
+    try:
+        print("\n🚀 Запускаю Pyrogram и жду QR-код...")
         
-        print(f"\n🔗 Или открой ссылку: {qr_login.url}")
-        print("\n⏳ Ожидание сканирования (60 секунд)...")
+        # Запускаем клиент
+        await client.start()
         
-        try:
-            # Ждем сканирования
-            await qr_login.wait(60)
-            print("\n✅ QR-код отсканирован!")
+        # Если дошли сюда, значит вход уже был выполнен через код
+        if client.me:
+            print("\n✅ Уже авторизован через код!")
+            login_success = True
+        else:
+            # Ждем сканирования QR-кода
+            print("\n⏳ Ожидание сканирования QR-кода (60 секунд)...")
+            await asyncio.sleep(60)
             
-            # Если запросит пароль 2FA
-            if not client.me:
-                password = input("Введите пароль двухфакторной аутентификации: ")
-                await client.check_password(password)
-            
-            print("\n✅ Авторизация успешна!")
-            
+            if client.me:
+                login_success = True
+                print("\n✅ QR-код отсканирован! Авторизация успешна!")
+        
+        if login_success or client.me:
             # Получаем строку сессии
             session_string = await client.export_session_string()
             print("\n" + "="*60)
@@ -65,9 +73,8 @@ async def create_session():
             print(f"\n👤 Пользователь: {me.first_name} (@{me.username})")
             print(f"📱 Телефон: +{me.phone_number}")
             print(f"🆔 ID: {me.id}")
-            
-        except asyncio.TimeoutError:
-            print("\n❌ Таймаут. Попробуйте еще раз")
+        else:
+            print("\n❌ Таймаут. QR-код не был отсканирован")
             
     except Exception as e:
         print(f"\n❌ Ошибка: {e}")
