@@ -17,7 +17,7 @@ from datetime import datetime
 
 # ==================== ЛОГИРОВАНИЕ ====================
 logging.basicConfig(
-    level=logging.DEBUG,  # Временно ставим DEBUG для отладки
+    level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
@@ -107,7 +107,6 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
         folder_name = "general"
         
         if topic_id:
-            logger.info(f"🔍 Найден ID темы: {topic_id}")
             topic_name = tg_client.get_topic_name(topic_id)
             
             if topic_name:
@@ -128,39 +127,29 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
             photo_date = message.date.strftime('%Y%m%d_%H%M%S')
             filename = f"photo_{photo_date}.jpg"
             is_image = True
-            logger.debug(f"📸 Обнаружено фото")
             
         elif message.document:
-            logger.debug(f"📄 Обнаружен документ")
             if hasattr(message.document, 'file_name'):
                 filename = message.document.file_name
-                logger.debug(f"   Имя файла: {filename}")
             else:
                 ext = Path(message.document.mime_type or "").suffix or ".dat"
                 filename = f"document_{message.id}{ext}"
-                logger.debug(f"   Сгенерировано имя: {filename}")
             
             ext = Path(filename).suffix.lower()
             if ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']:
                 is_image = True
-                logger.debug(f"   Определено как изображение")
             elif ext in ['.mp4', '.avi', '.mkv', '.mov', '.wmv', '.webm']:
                 is_video = True
-                logger.debug(f"   Определено как видео")
         
         elif message.video:
-            logger.debug(f"🎬 Обнаружено видео")
             if hasattr(message.video, 'file_name') and message.video.file_name:
                 filename = message.video.file_name
-                logger.debug(f"   Имя файла: {filename}")
             else:
                 video_date = message.date.strftime('%Y%m%d_%H%M%S')
                 filename = f"video_{video_date}.mp4"
-                logger.debug(f"   Сгенерировано имя: {filename}")
             is_video = True
         
         if not filename:
-            logger.debug("⏭️ Сообщение не содержит медиафайл")
             return False, 0
         
         # === СКАЧИВАНИЕ ===
@@ -226,10 +215,6 @@ async def main():
     # Проверка настроек
     if not API_ID or not API_HASH or not TARGET_CHAT_ID or not YA_DISK_TOKEN:
         logger.error("❌ Не все переменные окружения установлены")
-        logger.error(f"API_ID: {API_ID}")
-        logger.error(f"API_HASH: {'есть' if API_HASH else 'нет'}")
-        logger.error(f"TARGET_CHAT_ID: {TARGET_CHAT_ID}")
-        logger.error(f"YA_DISK_TOKEN: {'есть' if YA_DISK_TOKEN else 'нет'}")
         return 1
     
     if not STRING_SESSION and not PHONE_NUMBER:
