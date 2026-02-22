@@ -21,8 +21,8 @@ except ImportError as e:
     sys.exit(1)
 
 # Ваши данные
-API_ID = int(os.getenv("API_ID", 38713310))
-API_HASH = os.getenv("API_HASH", "d5bf6522bb54a8165991b066d898f90c")
+API_ID = int(os.getenv("API_ID", 111))
+API_HASH = os.getenv("API_HASH", "111 ")
 
 async def qr_login():
     print("🚀 Запуск QR-логина...")
