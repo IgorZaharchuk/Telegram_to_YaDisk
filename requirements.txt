@@ -1,6 +1,8 @@
-# Заменяем Telethon на Pyrogram
-pyrogram>=2.0.0
-PyTgCrypto>=4.0.0  # для ускорения
+# Pyrogram (основная библиотека)
+pyrogram>=2.0.106
+
+# TgCrypto (опционально, для ускорения) - используем правильную версию
+tgcrypto>=1.2.12
 
 # Yandex Disk
 yadisk[async-defaults]>=3.4.0
