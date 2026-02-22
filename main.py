@@ -71,18 +71,27 @@ async def main():
     progress = ProgressTracker()
     
     # Подключение
-    if not await tg.connect() or not await yandex.connect():
+    if not await tg.connect():
+        logger.error("❌ Не удалось подключиться к Telegram")
+        return 1
+    
+    if not await yandex.connect():
+        logger.error("❌ Не удалось подключиться к Яндекс.Диску")
+        await tg.disconnect()
         return 1
     
     try:
         # Поиск чата
         chat = await tg.find_chat(target_chat)
+        logger.info(f"✅ Чат: {chat.title}")
         
-        # Загрузка тем
-        await tg.load_topics(chat.id)
+        # Загрузка всех тем через raw API
+        all_topics = await tg.load_all_topics(chat.id)  # 👈 ПРАВИЛЬНОЕ ИМЯ МЕТОДА
+        logger.info(f"📚 Загружено {len(all_topics)} тем")
         
         # Получение новых сообщений
         messages = await tg.get_new_messages(chat.id, progress.progress.last_id, limit=200)
+        logger.info(f"📨 Получено {len(messages)} новых сообщений")
         
         processed = 0
         for msg in messages:
@@ -108,6 +117,12 @@ async def main():
             await asyncio.sleep(float(os.getenv("RATE_LIMIT_DELAY", "1.0")))
         
         logger.info(f"🏁 Завершено. {progress.get_summary()}")
+        
+    except Exception as e:
+        logger.error(f"❌ Критическая ошибка: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
         
     finally:
         await tg.disconnect()
