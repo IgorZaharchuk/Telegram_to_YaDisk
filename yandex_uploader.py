@@ -1,6 +1,6 @@
 """
 Загрузка файлов на Яндекс.Диск
-С правильным созданием всей структуры папок
+С правильной проверкой существования файлов и созданием папок
 """
 
 import os
@@ -70,19 +70,24 @@ class YandexUploader:
     async def check_file_exists(self, remote_dir: str, filename: str) -> bool:
         """
         Проверка существования файла на Яндекс.Диске
+        ВНИМАНИЕ: Только проверка, без создания папок!
         :param remote_dir: Удалённая папка (полный путь)
         :param filename: Имя файла
         :return: True если файл существует
         """
         try:
-            # Убеждаемся, что структура папок существует
-            await self.ensure_dir_recursive(remote_dir)
-            
             remote_path = f"{remote_dir}/{filename}"
+            
+            # Проверяем существование файла (НЕ создаем папки!)
             exists = await self.client.exists(remote_path)
+            
             if exists:
                 logger.debug(f"✅ Файл уже существует: {remote_path}")
+            else:
+                logger.debug(f"📄 Файл не найден, будет загружен: {remote_path}")
+                
             return exists
+            
         except Exception as e:
             logger.debug(f"⚠️ Ошибка при проверке файла: {e}")
             return False
@@ -96,19 +101,21 @@ class YandexUploader:
         :return: Успех загрузки
         """
         try:
-            # Сначала создаём всю структуру папок
-            if not await self.ensure_dir_recursive(remote_dir):
-                logger.error(f"❌ Не удалось создать структуру папок {remote_dir}")
-                return False
-            
             remote_path = f"{remote_dir}/{filename}"
             
-            # Проверяем, существует ли уже файл
+            # ШАГ 1: Проверяем существование файла (без создания папок!)
             if await self.client.exists(remote_path):
                 logger.info(f"⏭️ Файл уже существует, пропускаем: {remote_path}")
                 return True  # Считаем успешным, так как файл уже есть
             
-            # Загружаем файл
+            # ШАГ 2: Файла нет - создаем структуру папок
+            logger.debug(f"📂 Файл не найден, создаю структуру папок: {remote_dir}")
+            if not await self.ensure_dir_recursive(remote_dir):
+                logger.error(f"❌ Не удалось создать структуру папок {remote_dir}")
+                return False
+            
+            # ШАГ 3: Загружаем файл
+            logger.info(f"📤 Загрузка нового файла: {remote_path}")
             with open(local_path, 'rb') as f:
                 await self.client.upload(f, remote_path)
             
