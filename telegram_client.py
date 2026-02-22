@@ -85,7 +85,7 @@ class TelegramDownloader:
     async def load_all_topics(self, chat_id):
         """
         Загрузка всех тем чата через raw API GetForumTopics
-        Возвращает словарь {topic_id: topic_name}
+        Возвращает словарь {topic_id: topic_name} с ключами-строками
         """
         try:
             logger.info(f"📚 Загружаю все темы чата через raw API...")
@@ -104,10 +104,10 @@ class TelegramDownloader:
                 )
             )
             
-            # Сохраняем в кэш
+            # Сохраняем в кэш (ключи как строки для JSON)
             if hasattr(result, 'topics') and result.topics:
                 for topic in result.topics:
-                    self.topics_cache[topic.id] = topic.title
+                    self.topics_cache[str(topic.id)] = topic.title
                 logger.info(f"✅ Загружено {len(self.topics_cache)} тем:")
                 for topic_id, topic_name in self.topics_cache.items():
                     logger.info(f"   📁 {topic_name} (ID: {topic_id})")
@@ -122,7 +122,7 @@ class TelegramDownloader:
     
     def get_topic_name(self, topic_id):
         """Получение названия темы по ID из кэша"""
-        return self.topics_cache.get(topic_id)
+        return self.topics_cache.get(str(topic_id))
     
     def get_topic_id_from_message(self, message):
         """
@@ -137,7 +137,7 @@ class TelegramDownloader:
         if hasattr(message, 'reply_to_message_id') and message.reply_to_message_id:
             reply_id = message.reply_to_message_id
             # Проверяем, есть ли это ID в кэше тем
-            if reply_id in self.topics_cache:
+            if str(reply_id) in self.topics_cache:
                 logger.debug(f"✅ Найден ID темы в reply_to_message_id: {reply_id}")
                 return reply_id
         
