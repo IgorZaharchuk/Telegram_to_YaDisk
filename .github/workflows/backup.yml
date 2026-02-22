@@ -27,9 +27,10 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
+          # 👇 ИСПРАВЛЕНО: проверяем Pyrogram вместо Telethon
           echo "✅ Установленные пакеты:"
-          pip list | grep -E "telethon|yadisk|Pillow"
-          python -c "import telethon; print(f'✅ telethon version: {telethon.__version__}')"
+          pip list | grep -E "pyrogram|yadisk|Pillow"
+          python -c "import pyrogram; print(f'✅ pyrogram version: {pyrogram.__version__}')"
           python -c "import yadisk; print(f'✅ yadisk version: {yadisk.__version__}')"
           python -c "from PIL import Image; print(f'✅ pillow version: {Image.__version__}')"
       
@@ -42,7 +43,7 @@ jobs:
           YA_DISK_TOKEN: ${{ secrets.YA_DISK_TOKEN }}
           YA_DISK_PATH: ${{ secrets.YA_DISK_PATH || '/mtproto_backup' }}
           MAX_FILES_PER_RUN: ${{ secrets.MAX_FILES_PER_RUN || '50' }}
-          STRING_SESSION: ${{ secrets.STRING_SESSION }}  # 👈 НОВОЕ!
+          STRING_SESSION: ${{ secrets.STRING_SESSION }}
         run: python main.py
       
       - name: Save progress
