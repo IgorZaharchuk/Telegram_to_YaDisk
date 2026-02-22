@@ -127,17 +127,32 @@ class TelegramDownloader:
     def get_topic_id_from_message(self, message):
         """
         Получение ID темы из сообщения
-        Проверяем стандартные поля, доступные в официальной версии
+        Проверяем все возможные места, где может быть ID темы
         """
         if not message:
             return None
         
-        # В официальной версии могут быть эти поля
+        # Способ 1: Прямое поле reply_to_top_message_id (основной для тем)
         if hasattr(message, 'reply_to_top_message_id') and message.reply_to_top_message_id:
+            logger.debug(f"✅ Найден reply_to_top_message_id: {message.reply_to_top_message_id}")
             return message.reply_to_top_message_id
-        elif hasattr(message, 'message_thread_id') and message.message_thread_id:
+        
+        # Способ 2: Поле message_thread_id (альтернативный способ)
+        if hasattr(message, 'message_thread_id') and message.message_thread_id:
+            logger.debug(f"✅ Найден message_thread_id: {message.message_thread_id}")
             return message.message_thread_id
         
+        # Способ 3: Через reply_to (если есть)
+        if hasattr(message, 'reply_to') and message.reply_to:
+            if hasattr(message.reply_to, 'reply_to_top_id'):
+                logger.debug(f"✅ Найден reply_to.reply_to_top_id: {message.reply_to.reply_to_top_id}")
+                return message.reply_to.reply_to_top_id
+        
+        # Способ 4: Через reply_to_message (если есть)
+        if hasattr(message, 'reply_to_message') and message.reply_to_message:
+            return self.get_topic_id_from_message(message.reply_to_message)
+        
+        logger.debug(f"❌ Не удалось найти ID темы в сообщении {message.id}")
         return None
     
     async def get_messages(self, chat_id, min_id: int = 0, limit: int = 100):
