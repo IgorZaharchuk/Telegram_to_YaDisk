@@ -66,8 +66,14 @@ class ProgressTracker:
             logger.error(f"❌ Ошибка сохранения прогресса: {e}")
     
     def update(self, message_id: int, status: str):
-        """Обновление прогресса после обработки сообщения"""
-        self.progress.last_id = max(self.progress.last_id, message_id)
+        """
+        Обновление прогресса после обработки сообщения
+        ВАЖНО: last_id всегда увеличивается, даже если файл пропущен!
+        """
+        # Всегда обновляем last_id на максимальный обработанный ID
+        if message_id > self.progress.last_id:
+            self.progress.last_id = message_id
+        
         self.progress.total_files += 1
         
         if status == 'uploaded':
@@ -81,7 +87,7 @@ class ProgressTracker:
     
     def get_summary(self) -> str:
         """Получение сводки по прогрессу"""
-        return (f"ID:{self.progress.last_id}, "
+        return (f"последний ID:{self.progress.last_id}, "
                 f"всего:{self.progress.total_files}, "
                 f"загружено:{self.progress.uploaded}, "
                 f"пропущено:{self.progress.skipped}, "
