@@ -15,9 +15,16 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 
-from telegram_client import TelegramDownloader
-from compress import optimize_image, compress_video
-from yandex_uploader import YandexUploader
+# ==================== ЛОГИРОВАНИЕ (В САМОМ НАЧАЛЕ!) ====================
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler('backup.log', encoding='utf-8')
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # ==================== НАСТРОЙКИ ====================
 API_ID = int(os.getenv("API_ID", 0))
@@ -27,7 +34,7 @@ YA_DISK_TOKEN = os.getenv("YA_DISK_TOKEN", "")
 YA_DISK_PATH = os.getenv("YA_DISK_PATH", "/mtproto_backup")
 STRING_SESSION = os.getenv("STRING_SESSION", None)
 
-# 👇 КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: преобразуем TARGET_CHAT_ID в число
+# Преобразуем TARGET_CHAT_ID в число
 TARGET_CHAT_ID_STR = os.getenv("TARGET_CHAT_ID", "0")
 try:
     TARGET_CHAT_ID = int(TARGET_CHAT_ID_STR)
@@ -43,16 +50,10 @@ RATE_LIMIT_DELAY = float(os.getenv("RATE_LIMIT_DELAY", "1.0"))
 PROGRESS_FILE = "progress.json"
 TOPIC_CACHE_FILE = "topic_cache.json"
 
-# ==================== ЛОГИРОВАНИЕ ====================
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('backup.log', encoding='utf-8')
-    ]
-)
-logger = logging.getLogger(__name__)
+# Импорты после настроек
+from telegram_client import TelegramDownloader
+from compress import optimize_image, compress_video
+from yandex_uploader import YandexUploader
 
 # ==================== УТИЛИТЫ ====================
 def sanitize_filename(name: str) -> str:
@@ -241,15 +242,13 @@ async def main():
         logger.error("❌ Нужна либо STRING_SESSION, либо PHONE_NUMBER")
         return 1
     
-    logger.info("🚀 Запуск MTProto бэкапа")
-    logger.info(f"📊 Прогресс: последний ID {progress.get('last_id', 0)}")
-    
     # Загружаем прогресс
     progress = load_json(PROGRESS_FILE, {"last_id": 0, "total": 0})
     topic_cache = load_json(TOPIC_CACHE_FILE, {})
     last_id = progress.get("last_id", 0)
     total = progress.get("total", 0)
     
+    logger.info("🚀 Запуск MTProto бэкапа")
     logger.info(f"📊 Прогресс: последний ID {last_id}, всего файлов {total}")
     
     # Подключение к Telegram
