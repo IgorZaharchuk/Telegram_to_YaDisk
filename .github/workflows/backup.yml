@@ -39,15 +39,11 @@ jobs:
           if [ ! -f progress.json ]; then
             echo '{"last_id": 0, "total": 0}' > progress.json
             echo "✅ Создан progress.json"
-          else
-            echo "✅ progress.json уже существует"
           fi
           
           if [ ! -f topic_cache.json ]; then
             echo '{}' > topic_cache.json
             echo "✅ Создан topic_cache.json"
-          else
-            echo "✅ topic_cache.json уже существует"
           fi
       
       - name: Run backup
@@ -62,31 +58,33 @@ jobs:
           STRING_SESSION: ${{ secrets.STRING_SESSION }}
         run: python main.py
       
-      - name: Save progress
+      - name: Save progress to repository
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          # Проверяем изменения в JSON файлах
-          if git diff --quiet progress.json topic_cache.json; then
-            echo "ℹ️ Нет изменений в JSON файлах"
-          else
-            echo "📝 Изменения найдены:"
-            git diff --stat progress.json topic_cache.json
-          fi
-          
-          # Добавляем файлы (игнорируем ошибки если файлов нет)
+          # Добавляем JSON файлы
           git add progress.json topic_cache.json 2>/dev/null || true
           
           # Создаем commit если есть изменения
           if ! git diff --staged --quiet; then
-            echo "📝 Сохраняю изменения..."
+            echo "📝 Сохраняю изменения в JSON..."
             git commit -m "Update progress: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
-            
-            # Пушим с обработкой конфликтов
             git pull origin main --no-edit || true
             git push origin main
             echo "✅ Прогресс сохранен в репозиторий"
           else
-            echo "ℹ️ Нет изменений для сохранения"
+            echo "ℹ️ Нет изменений в JSON"
           fi
+      
+      - name: Upload logs as artifacts
+        if: always()  # Сохраняем даже при ошибке
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-logs-${{ github.run_id }}
+          path: |
+            backup.log
+            progress.json
+            topic_cache.json
+          retention-days: 7
+          if-no-files-found: warn
