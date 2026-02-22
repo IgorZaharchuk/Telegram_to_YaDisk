@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram MTProto Backup to Yandex Disk
-Главный файл с сохранением прогресса и проверкой дублей
+Главный файл с сохранением прогресса и логированием
 """
 
 import os
@@ -15,13 +15,19 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 
-# ==================== ЛОГИРОВАНИЕ ====================
+# ==================== НАСТРОЙКИ ЛОГИРОВАНИЯ ====================
+LOG_FILE = "backup.log"
+LOG_FORMAT = '%(asctime)s - %(levelname)s - %(message)s'
+LOG_DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
+
+# Настраиваем логирование: и в файл, и в консоль
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
+    format=LOG_FORMAT,
+    datefmt=LOG_DATE_FORMAT,
     handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('backup.log', encoding='utf-8')
+        logging.FileHandler(LOG_FILE, encoding='utf-8', mode='a'),
+        logging.StreamHandler(sys.stdout)
     ]
 )
 logger = logging.getLogger(__name__)
@@ -167,17 +173,12 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
         if not filename:
             return False, 0, message.id
         
-        # === ПРОВЕРКА НАЛИЧИЯ ФАЙЛА НА ЯНДЕКС.ДИСКЕ ===
+        # === ФОРМИРУЕМ ПУТЬ ДЛЯ ЗАГРУЗКИ ===
         chat_title = getattr(message.chat, 'title', str(message.chat.id))
         chat_folder = sanitize_folder_name(chat_title)
         
         remote_dir = f"{yandex.base_path}/{chat_folder}/{folder_name}"
         safe_filename = sanitize_filename(filename)
-        
-        # Проверяем, есть ли уже такой файл (папка создастся автоматически)
-        if await yandex.check_file_exists(remote_dir, safe_filename):
-            logger.info(f"⏭️ Файл уже существует на Яндекс.Диске: {remote_dir}/{safe_filename}")
-            return True, 1, message.id  # Считаем успешно обработанным
         
         # === СКАЧИВАНИЕ ===
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
@@ -304,15 +305,15 @@ async def main():
                         progress["last_id"] = msg_id
                         progress["total"] = total
                         save_json(PROGRESS_FILE, progress)
-                        logger.debug(f"💾 Прогресс сохранен: последний ID {msg_id}")
+                        logger.info(f"💾 Прогресс сохранен: последний ID {msg_id}, всего {total}")
                         
                         if processed >= MAX_FILES_PER_RUN:
-                            logger.info(f"⏸️ Достигнут лимит {MAX_FILES_PER_RUN} файлов")
+                            logger.info(f"⏸️ Достигнут лимит {MAX_FILES_PER_RUN} файлов за запуск")
                             break
                     
                     await asyncio.sleep(RATE_LIMIT_DELAY)
             
-            logger.info(f"✅ Готово. Обработано: {processed}, всего: {total}")
+            logger.info(f"✅ Завершено. Обработано за сессию: {processed}, всего файлов: {total}")
         
     except Exception as e:
         logger.error(f"❌ Критическая ошибка: {e}")
@@ -321,9 +322,11 @@ async def main():
         return 1
     finally:
         await tg_client.disconnect()
+        logger.info("🔒 Сессия Telegram закрыта")
     
     return 0
 
 if __name__ == "__main__":
     exit_code = asyncio.run(main())
+    logger.info(f"🚪 Выход с кодом: {exit_code}")
     sys.exit(exit_code)
