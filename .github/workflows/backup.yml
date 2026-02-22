@@ -23,14 +23,12 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg git
+          sudo apt-get install -y ffmpeg
       
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          # Установка форка Pyrogram из GitHub
-          pip install git+https://github.com/KurimuzonAkuma/pyrogram.git@master
-          pip install yadisk[async-defaults] Pillow TgCrypto
+          pip install -r requirements.txt
           echo "✅ Установленные пакеты:"
           pip list | grep -E "pyrogram|yadisk|Pillow"
           python -c "import pyrogram; print(f'✅ pyrogram version: {pyrogram.__version__}')"
