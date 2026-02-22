@@ -19,7 +19,7 @@ IMAGE_MIN_SIZE_KB = 100
 
 VIDEO_CRF = 22
 VIDEO_PRESET = 'fast'
-VIDEO_MIN_SIZE_MB = 15
+VIDEO_MIN_SIZE_MB = 10
 VIDEO_TIMEOUT = 300
 
 async def optimize_image(input_path: str, output_path: str) -> tuple[bool, str]:
