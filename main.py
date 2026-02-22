@@ -174,7 +174,7 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
         remote_dir = f"{yandex.base_path}/{chat_folder}/{folder_name}"
         safe_filename = sanitize_filename(filename)
         
-        # Проверяем, есть ли уже такой файл (дубликаты)
+        # Проверяем, есть ли уже такой файл (папка создастся автоматически)
         if await yandex.check_file_exists(remote_dir, safe_filename):
             logger.info(f"⏭️ Файл уже существует на Яндекс.Диске: {remote_dir}/{safe_filename}")
             return True, 1, message.id  # Считаем успешно обработанным
