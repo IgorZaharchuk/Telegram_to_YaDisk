@@ -130,7 +130,10 @@ class TelegramDownloader:
         Проверяем все возможные места, где может быть ID темы
         """
         if not message:
+            logger.debug("❌ Сообщение пустое")
             return None
+        
+        logger.debug(f"🔍 Анализ сообщения {message.id} для поиска темы")
         
         # Способ 1: Прямое поле reply_to_top_message_id (основной для тем)
         if hasattr(message, 'reply_to_top_message_id') and message.reply_to_top_message_id:
@@ -144,27 +147,39 @@ class TelegramDownloader:
         
         # Способ 3: Через reply_to (если есть)
         if hasattr(message, 'reply_to') and message.reply_to:
+            logger.debug(f"📎 Есть reply_to: {type(message.reply_to)}")
             if hasattr(message.reply_to, 'reply_to_top_id'):
-                logger.debug(f"✅ Найден reply_to.reply_to_top_id: {message.reply_to.reply_to_top_id}")
+                logger.debug(f"   reply_to_top_id: {message.reply_to.reply_to_top_id}")
                 return message.reply_to.reply_to_top_id
+            if hasattr(message.reply_to, 'reply_to_msg_id'):
+                logger.debug(f"   reply_to_msg_id: {message.reply_to.reply_to_msg_id}")
         
-        # Способ 4: Через reply_to_message (если есть)
-        if hasattr(message, 'reply_to_message') and message.reply_to_message:
-            return self.get_topic_id_from_message(message.reply_to_message)
+        # Способ 4: Через reply_to_message_id
+        if hasattr(message, 'reply_to_message_id') and message.reply_to_message_id:
+            logger.debug(f"📎 Есть reply_to_message_id: {message.reply_to_message_id}")
         
         logger.debug(f"❌ Не удалось найти ID темы в сообщении {message.id}")
         return None
     
-    async def get_messages(self, chat_id, min_id: int = 0, limit: int = 100):
+    async def get_messages(self, chat_id, min_id: int = 0, limit: int = 200):
         """Получение сообщений из чата"""
         try:
             messages = []
             async for msg in self.client.get_chat_history(chat_id, limit=limit):
                 if msg.id > min_id:
                     messages.append(msg)
+                    # Логируем первое сообщение для отладки
+                    if len(messages) == 1:
+                        logger.debug(f"📨 Первое сообщение ID: {msg.id}")
+                        # Проверяем наличие темы
+                        topic_id = self.get_topic_id_from_message(msg)
+                        if topic_id:
+                            logger.debug(f"   ✅ Сообщение в теме {topic_id}")
+                        else:
+                            logger.debug(f"   ❌ Сообщение вне темы")
             
             messages.sort(key=lambda x: x.id)
-            logger.info(f"📨 Получено {len(messages)} сообщений")
+            logger.info(f"📨 Получено {len(messages)} сообщений с ID > {min_id}")
             return messages
             
         except Exception as e:
