@@ -1,6 +1,7 @@
 """
 Telegram клиент - самодостаточный модуль
 Отвечает за: подключение, получение тем, скачивание файлов
+ТОЧНО КАК В РАБОЧЕЙ ВЕРСИИ - ключи как строки
 """
 
 import os
@@ -42,7 +43,7 @@ class TelegramDownloader:
         self.session_string = config.get('session_string')
         self.session_file = config.get('session_file', 'user_session')
         self.client = None
-        self.topics_cache = {}  # {topic_id: topic_name}
+        self.topics_cache = {}  # {topic_id: topic_name} с ключами-строками!
         self._me = None
     
     async def connect(self) -> bool:
@@ -90,15 +91,18 @@ class TelegramDownloader:
             logger.error(f"❌ Ошибка поиска чата: {e}")
             raise
     
-    async def load_topics(self, chat_id: int) -> Dict[int, str]:
+    async def load_all_topics(self, chat_id: int) -> Dict[str, str]:
         """
-        Загрузка всех тем чата
-        :return: {topic_id: topic_name}
+        Загрузка всех тем чата через raw API GetForumTopics
+        ТОЧНО КАК В РАБОЧЕЙ ВЕРСИИ - ключи как строки!
         """
         try:
-            logger.info(f"📚 Загружаю темы чата...")
+            logger.info(f"📚 Загружаю все темы чата через raw API...")
+            
+            # Получаем InputChannel для API запроса
             channel = await self.client.resolve_peer(chat_id)
             
+            # Прямой запрос к API для получения тем
             result = await self.client.invoke(
                 GetForumTopics(
                     channel=channel,
@@ -109,31 +113,43 @@ class TelegramDownloader:
                 )
             )
             
+            # Сохраняем в кэш (ключи как СТРОКИ для JSON)
             if hasattr(result, 'topics') and result.topics:
                 for topic in result.topics:
-                    self.topics_cache[topic.id] = topic.title
-                logger.info(f"✅ Загружено {len(self.topics_cache)} тем")
-                for tid, name in self.topics_cache.items():
-                    logger.info(f"   📁 {name} (ID: {tid})")
+                    self.topics_cache[str(topic.id)] = topic.title  # 👈 СТРОКА!
+                logger.info(f"✅ Загружено {len(self.topics_cache)} тем:")
+                for topic_id, topic_name in self.topics_cache.items():
+                    logger.info(f"   📁 {topic_name} (ID: {topic_id})")
             else:
-                logger.info("ℹ️ В чате нет тем")
+                logger.info("ℹ️ В чате нет тем или форум отключен")
             
             return self.topics_cache
+            
         except Exception as e:
             logger.error(f"❌ Ошибка загрузки тем: {e}")
             return {}
     
+    def get_topic_name(self, topic_id: int) -> Optional[str]:
+        """Получение названия темы по ID из кэша"""
+        return self.topics_cache.get(str(topic_id))  # 👈 СТРОКА!
+    
     def get_topic_id_from_message(self, message) -> Optional[int]:
-        """Определение ID темы из сообщения"""
+        """
+        Получение ID темы из сообщения
+        В Telegram ID темы совпадает с ID первого сообщения в теме
+        """
+        if not message:
+            return None
+        
+        # Проверяем наличие reply_to_message_id
         if hasattr(message, 'reply_to_message_id') and message.reply_to_message_id:
             reply_id = message.reply_to_message_id
-            if reply_id in self.topics_cache:
+            # Проверяем, есть ли это ID в кэше тем (как строка!)
+            if str(reply_id) in self.topics_cache:
+                logger.debug(f"✅ Найден ID темы в reply_to_message_id: {reply_id}")
                 return reply_id
+        
         return None
-    
-    def get_topic_name(self, topic_id: int) -> Optional[str]:
-        """Получение названия темы по ID"""
-        return self.topics_cache.get(topic_id)
     
     async def get_new_messages(self, chat_id: int, min_id: int = 0, limit: int = 200) -> List:
         """Получение новых сообщений"""
@@ -152,7 +168,6 @@ class TelegramDownloader:
     async def download_media_with_topic(self, message) -> Optional[DownloadResult]:
         """
         Скачивание медиафайла с определением темы
-        Всё в одном месте!
         """
         try:
             # Определяем тип файла и имя
@@ -202,7 +217,7 @@ class TelegramDownloader:
             with tempfile.NamedTemporaryFile(delete=False) as tmp:
                 local_path = tmp.name
             
-            logger.info(f"📥 Скачиваю: {filename} в тему {topic_folder}")
+            logger.info(f"📥 Скачиваю: {filename} -> {chat_folder}/{topic_folder}")
             await self.client.download_media(message, local_path)
             file_size = os.path.getsize(local_path)
             
