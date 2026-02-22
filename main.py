@@ -17,7 +17,7 @@ from datetime import datetime
 
 # ==================== ЛОГИРОВАНИЕ ====================
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,  # Временно ставим DEBUG для отладки
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
@@ -103,11 +103,6 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
         # === ПОЛУЧАЕМ ID ТЕМЫ ИЗ СООБЩЕНИЯ ===
         topic_id = tg_client.get_topic_id_from_message(message)
         
-        # === ОТЛАДКА: показываем информацию о сообщении ===
-        logger.debug(f"📨 Обработка сообщения {message.id}")
-        logger.debug(f"   Тип: {'медиа' if message.media else 'текст'}")
-        logger.debug(f"   Дата: {message.date}")
-        
         # === ОПРЕДЕЛЯЕМ НАЗВАНИЕ ПАПКИ ===
         folder_name = "general"
         
@@ -123,18 +118,6 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
                 logger.info(f"📁 ID темы: {topic_id} -> папка {folder_name}")
         else:
             logger.info(f"📁 Сообщение {message.id} вне темы -> папка general")
-            
-            # === ДОПОЛНИТЕЛЬНАЯ ОТЛАДКА ДЛЯ ПОИСКА ПРИЧИНЫ ===
-            # Проверяем наличие специальных полей в сообщении
-            special_fields = ['reply_to_top_message_id', 'message_thread_id', 'reply_to']
-            for field in special_fields:
-                if hasattr(message, field):
-                    value = getattr(message, field)
-                    logger.debug(f"   Поле {field}: {value}")
-            
-            # Если есть reply_to_message, покажем его ID
-            if hasattr(message, 'reply_to_message') and message.reply_to_message:
-                logger.debug(f"   reply_to_message.id: {message.reply_to_message.id}")
         
         # === ОПРЕДЕЛЕНИЕ ТИПА ФАЙЛА ===
         filename = None
