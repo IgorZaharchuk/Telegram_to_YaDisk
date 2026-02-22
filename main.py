@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram MTProto Backup to Yandex Disk
-Главный файл проекта для Pyrogram
+Главный файл проекта для Pyrogram с отладкой тем
 """
 
 import os
@@ -15,9 +15,9 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 
-# ==================== ЛОГИРОВАНИЕ (В САМОМ НАЧАЛЕ!) ====================
+# ==================== ЛОГИРОВАНИЕ ====================
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,  # Временно ставим DEBUG для отладки
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
@@ -96,22 +96,66 @@ def save_json(filepath: str, data: dict):
 
 # ==================== ОБРАБОТКА СООБЩЕНИЯ ====================
 async def process_message(tg_client, message, yandex, topic_cache: dict) -> tuple[bool, int]:
-    """Обработка одного сообщения"""
+    """Обработка одного сообщения с подробной отладкой"""
     temp_files = []
     
     try:
-        # 1. Определяем тему
+        # === ПОДРОБНАЯ ОТЛАДКА СООБЩЕНИЯ ===
+        logger.debug("="*50)
+        logger.debug(f"📨 Обработка сообщения ID: {message.id}")
+        logger.debug(f"Тип сообщения: {type(message)}")
+        logger.debug(f"Дата: {message.date}")
+        
+        # Проверяем все возможные атрибуты, связанные с темами
+        logger.debug("--- Поиск атрибутов темы ---")
+        
+        # Список атрибутов для проверки
+        topic_attrs = [
+            'reply_to_top_id',
+            'message_thread_id', 
+            'forum_topic',
+            'reply_to_msg_id',
+            'reply_to_message_id',
+            'reply_to'
+        ]
+        
+        for attr in topic_attrs:
+            if hasattr(message, attr):
+                value = getattr(message, attr)
+                logger.debug(f"✅ Найден атрибут {attr}: {value}")
+            else:
+                logger.debug(f"❌ Нет атрибута {attr}")
+        
+        # Если есть reply_to, проверяем его подробно
+        if hasattr(message, 'reply_to') and message.reply_to:
+            logger.debug("--- Детальный разбор reply_to ---")
+            reply_to = message.reply_to
+            logger.debug(f"Тип reply_to: {type(reply_to)}")
+            for attr in dir(reply_to):
+                if not attr.startswith('_'):
+                    try:
+                        value = getattr(reply_to, attr)
+                        logger.debug(f"  reply_to.{attr}: {value}")
+                    except:
+                        pass
+        
+        # Проверяем структуру сообщения
+        logger.debug("--- Основные атрибуты сообщения ---")
+        important_attrs = ['id', 'chat_id', 'from_user', 'text', 'caption', 'media']
+        for attr in important_attrs:
+            if hasattr(message, attr):
+                value = getattr(message, attr)
+                logger.debug(f"  {attr}: {value}")
+        
+        # === ОПРЕДЕЛЕНИЕ ТЕМЫ ===
         topic_id = tg_client.get_topic_id_from_message(message)
-
-        # Отладка
-        logger.debug(f"Message ID: {message.id}")
-        if hasattr(message, 'reply_to_top_id'):
-            logger.debug(f"reply_to_top_id: {message.reply_to_top_id}")
+        logger.debug(f"🎯 Определенный topic_id: {topic_id}")
 
         topic_name = "general"
 
         if topic_id:
             topic_id_str = str(topic_id)
+            logger.info(f"🔍 Найдена тема ID: {topic_id}")
 
             # Проверяем кэш
             if topic_id_str in topic_cache:
@@ -119,6 +163,7 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
                 logger.info(f"📁 Тема из кэша: {topic_name} (ID: {topic_id})")
             else:
                 # Пытаемся получить название через API
+                logger.info(f"🔄 Запрашиваю название для темы ID: {topic_id}")
                 real_name = await tg_client.get_topic_name(message.chat.id, topic_id)
 
                 if real_name:
@@ -133,7 +178,8 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
                     save_json(TOPIC_CACHE_FILE, topic_cache)
                     logger.info(f"📁 Использую ID темы: {topic_name}")
         else:
-            logger.info("📁 Сообщение вне темы (general)")
+            logger.warning("⚠️ Не удалось определить ID темы")
+            logger.info("📁 Сообщение будет в папку general")
         
         # 2. Определяем тип файла и имя
         filename = None
@@ -144,31 +190,41 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
             photo_date = message.date.strftime('%Y%m%d_%H%M%S')
             filename = f"photo_{photo_date}.jpg"
             is_image = True
+            logger.debug(f"📸 Обнаружено фото")
             
         elif message.document:
+            logger.debug(f"📄 Обнаружен документ")
             # Получаем имя файла из атрибутов документа
             if hasattr(message.document, 'file_name'):
                 filename = message.document.file_name
+                logger.debug(f"   Имя файла: {filename}")
             else:
                 # Если нет имени, генерируем из mime_type
                 ext = Path(message.document.mime_type or "").suffix or ".dat"
                 filename = f"document_{message.id}{ext}"
+                logger.debug(f"   Сгенерировано имя: {filename}")
             
             ext = Path(filename).suffix.lower()
             if ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']:
                 is_image = True
+                logger.debug(f"   Определено как изображение")
             elif ext in ['.mp4', '.avi', '.mkv', '.mov', '.wmv', '.webm']:
                 is_video = True
+                logger.debug(f"   Определено как видео")
         
         elif message.video:
+            logger.debug(f"🎬 Обнаружено видео")
             if hasattr(message.video, 'file_name') and message.video.file_name:
                 filename = message.video.file_name
+                logger.debug(f"   Имя файла: {filename}")
             else:
                 video_date = message.date.strftime('%Y%m%d_%H%M%S')
                 filename = f"video_{video_date}.mp4"
+                logger.debug(f"   Сгенерировано имя: {filename}")
             is_video = True
         
         if not filename:
+            logger.debug("⏭️ Сообщение не содержит медиафайл")
             return False, 0
         
         # 3. Скачиваем
@@ -176,7 +232,7 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
             temp_path = tmp.name
             temp_files.append(temp_path)
         
-        logger.info(f"📥 Скачивание: {filename} ({topic_name})")
+        logger.info(f"📥 Скачивание: {filename} в папку {topic_name}")
         await tg_client.download_media(message, temp_path)
         
         # 4. Сжимаем если нужно
@@ -190,6 +246,7 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
             if success:
                 final_path = img_path
                 compress_info = info
+                logger.debug(f"   {info}")
         
         elif is_video:
             video_path = temp_path + ".compressed.mp4"
@@ -198,6 +255,7 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
             if success:
                 final_path = video_path
                 compress_info = info
+                logger.debug(f"   {info}")
         
         # 5. Загружаем на Яндекс.Диск
         chat_title = getattr(message.chat, 'title', str(message.chat.id))
@@ -206,15 +264,17 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
         remote_dir = f"{yandex.base_path}/{chat_folder}/{topic_name}"
         safe_filename = sanitize_filename(filename)
         
+        logger.debug(f"📤 Загрузка на Яндекс.Диск: {remote_dir}/{safe_filename}")
         success = await yandex.upload(final_path, remote_dir, safe_filename)
         
         if success and compress_info:
             logger.info(f"   {compress_info}")
         
+        logger.info(f"✅ Загружено: {filename}")
         return success, 1 if success else 0
         
     except Exception as e:
-        logger.error(f"❌ Ошибка обработки: {e}")
+        logger.error(f"❌ Ошибка обработки: {e}", exc_info=True)
         return False, 0
     
     finally:
@@ -222,8 +282,10 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
             try:
                 if os.path.exists(f):
                     os.unlink(f)
+                    logger.debug(f"🗑️ Удален временный файл: {f}")
             except:
                 pass
+        logger.debug("="*50)
 
 # ==================== ОСНОВНАЯ ФУНКЦИЯ ====================
 async def main():
@@ -261,7 +323,7 @@ async def main():
     try:
         await tg_client.connect()
         
-        # Получаем чат (теперь TARGET_CHAT_ID - это число)
+        # Получаем чат
         chat = await tg_client.get_chat(TARGET_CHAT_ID)
         chat_id = chat.id
         chat_title = getattr(chat, 'title', str(chat_id))
