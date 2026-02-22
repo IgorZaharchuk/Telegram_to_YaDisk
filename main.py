@@ -86,7 +86,7 @@ async def main():
         logger.info(f"✅ Чат: {chat.title}")
         
         # Загрузка всех тем через raw API
-        all_topics = await tg.load_all_topics(chat.id)  # 👈 ПРАВИЛЬНОЕ ИМЯ МЕТОДА
+        all_topics = await tg.load_all_topics(chat.id)
         logger.info(f"📚 Загружено {len(all_topics)} тем")
         
         # Получение новых сообщений
@@ -101,12 +101,15 @@ async def main():
             # Скачивание (телеграм сам определяет тему)
             download_result = await tg.download_media_with_topic(msg)
             if not download_result:
+                # Если не удалось скачать - все равно обновляем прогресс
+                progress.update(msg.id, 'error')
+                logger.warning(f"⚠️ Не удалось скачать сообщение {msg.id}")
                 continue
             
             # Обработка
             status, compress_info = await process_media(download_result, compressor, yandex)
             
-            # Обновление прогресса
+            # Обновление прогресса (ВСЕГДА, даже для skipped)
             progress.update(msg.id, status)
             
             if compress_info and compress_info.info:
