@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram MTProto Backup to Yandex Disk
-Главный файл с сохранением прогресса и логированием
+Главный файл с сохранением прогресса и надежной проверкой файлов
 """
 
 import os
@@ -180,6 +180,11 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
         remote_dir = f"{yandex.base_path}/{chat_folder}/{folder_name}"
         safe_filename = sanitize_filename(filename)
         
+        # === ПРОВЕРЯЕМ, ЕСТЬ ЛИ УЖЕ ТАКОЙ ФАЙЛ (через надежный метод) ===
+        if await yandex.file_exists(remote_dir, safe_filename):
+            logger.info(f"⏭️ Файл уже существует на Яндекс.Диске, пропускаем: {remote_dir}/{safe_filename}")
+            return True, 1, message.id
+        
         # === СКАЧИВАНИЕ ===
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
             temp_path = tmp.name
@@ -275,7 +280,9 @@ async def main():
         # Обновляем topic_cache из загруженных тем и сохраняем в файл
         if all_topics:
             old_count = len(topic_cache)
-            topic_cache.update(all_topics)
+            # Убеждаемся что ключи - строки
+            str_topics = {str(k): v for k, v in all_topics.items()}
+            topic_cache.update(str_topics)
             save_json(TOPIC_CACHE_FILE, topic_cache)
             logger.info(f"💾 Сохранено {len(all_topics)} тем в topic_cache.json (было {old_count})")
         
