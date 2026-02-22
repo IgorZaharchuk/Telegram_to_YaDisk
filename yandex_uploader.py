@@ -1,6 +1,6 @@
 """
 Загрузка файлов на Яндекс.Диск
-Упрощенная версия - загружаем с overwrite=False
+Упрощенная версия с overwrite=False
 """
 
 import os
@@ -12,37 +12,57 @@ logger = logging.getLogger(__name__)
 
 class YandexUploader:
     def __init__(self, token: str, base_path: str = "/mtproto_backup"):
+        """
+        Инициализация загрузчика на Яндекс.Диск
+        :param token: Токен доступа к Яндекс.Диску
+        :param base_path: Базовая папка на диске
+        """
         self.client = yadisk.AsyncClient(token=token)
         self.base_path = base_path
     
     async def __aenter__(self):
+        """Вход в контекстный менеджер"""
         await self.client.__aenter__()
+        
+        # Создаём корневую папку если нет
         if not await self.client.exists(self.base_path):
             await self.client.mkdir(self.base_path)
             logger.info(f"✅ Создана корневая папка {self.base_path}")
+        
         return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Выход из контекстного менеджера"""
         await self.client.__aexit__(exc_type, exc_val, exc_tb)
     
     async def ensure_dir_recursive(self, remote_dir: str) -> bool:
-        """Создание всех вложенных папок"""
+        """
+        Создание папки рекурсивно (все вложенные папки)
+        :param remote_dir: Полный путь к папке (например: /mtproto_backup/tg2ya/Весна_2022)
+        :return: Успех операции
+        """
         try:
+            # Разбиваем путь на части
             path_parts = remote_dir.strip('/').split('/')
             current_path = ""
             
             for part in path_parts:
                 if not part:
                     continue
+                    
+                # Формируем текущий путь
                 if current_path:
                     current_path = f"{current_path}/{part}"
                 else:
                     current_path = f"/{part}"
                 
+                # Создаем папку если её нет
                 if not await self.client.exists(current_path):
                     await self.client.mkdir(current_path)
                     logger.debug(f"✅ Создана папка: {current_path}")
+            
             return True
+            
         except Exception as e:
             logger.error(f"❌ Ошибка при создании папок: {e}")
             return False
@@ -50,7 +70,10 @@ class YandexUploader:
     async def upload(self, local_path: str, remote_dir: str, filename: str) -> bool:
         """
         Загрузка файла на Яндекс.Диск
-        Просто создаем папки и загружаем с overwrite=False
+        :param local_path: Путь к локальному файлу
+        :param remote_dir: Удалённая папка (полный путь)
+        :param filename: Имя файла
+        :return: Успех загрузки
         """
         try:
             # Создаем структуру папок
