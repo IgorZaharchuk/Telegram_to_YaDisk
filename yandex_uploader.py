@@ -1,6 +1,6 @@
 """
 Загрузка файлов на Яндекс.Диск
-С правильным созданием папок и проверкой дублей
+С правильным созданием всей структуры папок
 """
 
 import os
@@ -35,32 +35,48 @@ class YandexUploader:
         """Выход из контекстного менеджера"""
         await self.client.__aexit__(exc_type, exc_val, exc_tb)
     
-    async def ensure_dir(self, remote_dir: str) -> bool:
+    async def ensure_dir_recursive(self, remote_dir: str) -> bool:
         """
-        Создание папки если её нет (рекурсивно)
-        :param remote_dir: Путь к папке на Яндекс.Диске
+        Создание папки рекурсивно (все вложенные папки)
+        :param remote_dir: Полный путь к папке (например: /mtproto_backup/tg2ya/Весна_2022)
         :return: Успех операции
         """
         try:
-            if not await self.client.exists(remote_dir):
-                await self.client.mkdir(remote_dir)
-                logger.info(f"✅ Создана папка: {remote_dir}")
-                return True
+            # Разбиваем путь на части
+            path_parts = remote_dir.strip('/').split('/')
+            current_path = ""
+            
+            for part in path_parts:
+                if not part:
+                    continue
+                    
+                # Формируем текущий путь
+                if current_path:
+                    current_path = f"{current_path}/{part}"
+                else:
+                    current_path = f"/{part}"
+                
+                # Создаем папку если её нет
+                if not await self.client.exists(current_path):
+                    await self.client.mkdir(current_path)
+                    logger.debug(f"✅ Создана папка: {current_path}")
+            
             return True
+            
         except Exception as e:
-            logger.error(f"❌ Не удалось создать папку {remote_dir}: {e}")
+            logger.error(f"❌ Ошибка при создании папок: {e}")
             return False
     
     async def check_file_exists(self, remote_dir: str, filename: str) -> bool:
         """
         Проверка существования файла на Яндекс.Диске
-        :param remote_dir: Удалённая папка
+        :param remote_dir: Удалённая папка (полный путь)
         :param filename: Имя файла
         :return: True если файл существует
         """
         try:
-            # Сначала убеждаемся, что папка существует
-            await self.ensure_dir(remote_dir)
+            # Убеждаемся, что структура папок существует
+            await self.ensure_dir_recursive(remote_dir)
             
             remote_path = f"{remote_dir}/{filename}"
             exists = await self.client.exists(remote_path)
@@ -75,14 +91,14 @@ class YandexUploader:
         """
         Загрузка файла на Яндекс.Диск
         :param local_path: Путь к локальному файлу
-        :param remote_dir: Удалённая папка
+        :param remote_dir: Удалённая папка (полный путь)
         :param filename: Имя файла
         :return: Успех загрузки
         """
         try:
-            # Создаём папку если нужно
-            if not await self.ensure_dir(remote_dir):
-                logger.error(f"❌ Не удалось создать папку {remote_dir}")
+            # Сначала создаём всю структуру папок
+            if not await self.ensure_dir_recursive(remote_dir):
+                logger.error(f"❌ Не удалось создать структуру папок {remote_dir}")
                 return False
             
             remote_path = f"{remote_dir}/{filename}"
