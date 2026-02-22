@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram MTProto Backup to Yandex Disk
-Главный файл с поддержкой тем через raw API
+Главный файл с сохранением прогресса и проверкой дублей
 """
 
 import os
@@ -80,22 +80,39 @@ def sanitize_folder_name(name: str) -> str:
     return name[:100]
 
 def load_json(filepath: str, default: dict) -> dict:
-    """Загрузка JSON файла"""
-    if os.path.exists(filepath):
-        try:
+    """Загрузка JSON файла с проверкой прав"""
+    try:
+        if os.path.exists(filepath):
             with open(filepath, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except:
-            pass
-    return default
+        else:
+            # Создаем файл с дефолтными значениями
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(default, f, indent=2, ensure_ascii=False)
+            logger.info(f"✅ Создан новый файл: {filepath}")
+            return default
+    except Exception as e:
+        logger.warning(f"⚠️ Ошибка загрузки {filepath}: {e}")
+        return default
 
 def save_json(filepath: str, data: dict):
-    """Сохранение JSON файла"""
-    with open(filepath, 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+    """Сохранение JSON файла с немедленной записью"""
+    try:
+        # Сначала сохраняем во временный файл
+        temp_file = f"{filepath}.tmp"
+        with open(temp_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        
+        # Атомарно заменяем старый файл
+        os.replace(temp_file, filepath)
+        logger.debug(f"💾 Сохранено: {filepath}")
+    except Exception as e:
+        logger.error(f"❌ Ошибка сохранения {filepath}: {e}")
 
 # ==================== ОБРАБОТКА СООБЩЕНИЯ ====================
-async def process_message(tg_client, message, yandex, topic_cache: dict) -> tuple[bool, int]:
+async def process_message(tg_client, message, yandex, topic_cache: dict) -> tuple[bool, int, int]:
     """Обработка одного сообщения"""
     temp_files = []
     
@@ -104,11 +121,8 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
         topic_id = tg_client.get_topic_id_from_message(message)
         
         # === ОПРЕДЕЛЯЕМ НАЗВАНИЕ ПАПКИ ===
-        folder_name = "general"
-        
         if topic_id:
             topic_name = tg_client.get_topic_name(topic_id)
-            
             if topic_name:
                 folder_name = sanitize_folder_name(topic_name)
                 logger.info(f"📁 Тема: {topic_name} (ID: {topic_id}) -> папка {folder_name}")
@@ -116,6 +130,7 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
                 folder_name = f"topic_{topic_id}"
                 logger.info(f"📁 ID темы: {topic_id} -> папка {folder_name}")
         else:
+            folder_name = "general"
             logger.info(f"📁 Сообщение {message.id} вне темы -> папка general")
         
         # === ОПРЕДЕЛЕНИЕ ТИПА ФАЙЛА ===
@@ -150,7 +165,19 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
             is_video = True
         
         if not filename:
-            return False, 0
+            return False, 0, message.id
+        
+        # === ПРОВЕРКА НАЛИЧИЯ ФАЙЛА НА ЯНДЕКС.ДИСКЕ ===
+        chat_title = getattr(message.chat, 'title', str(message.chat.id))
+        chat_folder = sanitize_folder_name(chat_title)
+        
+        remote_dir = f"{yandex.base_path}/{chat_folder}/{folder_name}"
+        safe_filename = sanitize_filename(filename)
+        
+        # Проверяем, есть ли уже такой файл (дубликаты)
+        if await yandex.check_file_exists(remote_dir, safe_filename):
+            logger.info(f"⏭️ Файл уже существует на Яндекс.Диске: {remote_dir}/{safe_filename}")
+            return True, 1, message.id  # Считаем успешно обработанным
         
         # === СКАЧИВАНИЕ ===
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
@@ -181,25 +208,19 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
                 compress_info = info
         
         # === ЗАГРУЗКА НА ЯНДЕКС.ДИСК ===
-        chat_title = getattr(message.chat, 'title', str(message.chat.id))
-        chat_folder = sanitize_folder_name(chat_title)
-        
-        remote_dir = f"{yandex.base_path}/{chat_folder}/{folder_name}"
-        safe_filename = sanitize_filename(filename)
-        
         success = await yandex.upload(final_path, remote_dir, safe_filename)
         
         if success and compress_info:
             logger.info(f"   {compress_info}")
         
         logger.info(f"✅ Загружено: {filename}")
-        return success, 1 if success else 0
+        return success, 1 if success else 0, message.id
         
     except Exception as e:
         logger.error(f"❌ Ошибка обработки: {e}")
         import traceback
         traceback.print_exc()
-        return False, 0
+        return False, 0, message.id
     
     finally:
         for f in temp_files:
@@ -221,8 +242,10 @@ async def main():
         logger.error("❌ Нужна либо STRING_SESSION, либо PHONE_NUMBER")
         return 1
     
-    # Загружаем прогресс
+    # Загружаем прогресс (файл создастся если нет)
     progress = load_json(PROGRESS_FILE, {"last_id": 0, "total": 0})
+    topic_cache = load_json(TOPIC_CACHE_FILE, {})
+    
     last_id = progress.get("last_id", 0)
     total = progress.get("total", 0)
     
@@ -248,6 +271,13 @@ async def main():
         # Загружаем все темы через raw API
         all_topics = await tg_client.load_all_topics(chat_id)
         
+        # Обновляем topic_cache из загруженных тем и сохраняем в файл
+        if all_topics:
+            old_count = len(topic_cache)
+            topic_cache.update(all_topics)
+            save_json(TOPIC_CACHE_FILE, topic_cache)
+            logger.info(f"💾 Сохранено {len(all_topics)} тем в topic_cache.json (было {old_count})")
+        
         # Подключение к Яндекс.Диску
         async with YandexUploader(YA_DISK_TOKEN, YA_DISK_PATH) as yandex:
             
@@ -264,16 +294,17 @@ async def main():
                 
                 if message.media:
                     logger.info(f"📨 Сообщение {message.id}")
-                    success, count = await process_message(tg_client, message, yandex, {})
+                    success, count, msg_id = await process_message(tg_client, message, yandex, topic_cache)
                     
                     if success:
                         processed += count
                         total += count
                         
-                        # Сохраняем прогресс
-                        progress["last_id"] = message.id
+                        # Сохраняем прогресс ПОСЛЕ КАЖДОГО сообщения
+                        progress["last_id"] = msg_id
                         progress["total"] = total
                         save_json(PROGRESS_FILE, progress)
+                        logger.debug(f"💾 Прогресс сохранен: последний ID {msg_id}")
                         
                         if processed >= MAX_FILES_PER_RUN:
                             logger.info(f"⏸️ Достигнут лимит {MAX_FILES_PER_RUN} файлов")
