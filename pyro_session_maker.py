@@ -10,7 +10,7 @@ from pyrogram import Client
 async def create_session():
     api_id = int(input("Введите API_ID: "))
     api_hash = input("Введите API_HASH: ")
-    phone = input("Введите номер телефона (+79115067551): ")
+    phone = input("Введите номер телефона (+7...): ")
     
     client = Client(
         name="pyro_session",
