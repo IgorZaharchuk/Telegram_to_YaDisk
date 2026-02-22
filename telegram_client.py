@@ -1,7 +1,6 @@
 """
 Telegram клиент на базе Pyrogram
-Полная версия с правильной инициализацией чата
-Основано на: https://docs.pyrogram.org/api/methods/get_chat
+Исправленная версия для правильного определения тем
 """
 
 import os
@@ -19,6 +18,7 @@ class TelegramDownloader:
         self.session_string = session_string
         self.session_file = session_file
         self.client = None
+        self.dialog_cache = {}  # Кэш для диалогов
     
     async def connect(self):
         """Подключение к Telegram через Pyrogram"""
@@ -60,133 +60,89 @@ class TelegramDownloader:
             logger.info("🔒 Отключено от Telegram")
     
     async def get_chat(self, chat_id):
-        """
-        Получение информации о чате с правильной инициализацией
-        Основано на: https://docs.pyrogram.org/api/methods/get_chat
-        и реальных проектах
-        """
+        """Получение информации о чате"""
         try:
-            # Пробуем преобразовать в число, если это строка
-            original_id = chat_id
             if isinstance(chat_id, str):
                 try:
                     chat_id = int(chat_id)
                 except ValueError:
-                    # Если это username, оставляем как есть
                     pass
             
-            logger.info(f"🔍 Получаю информацию о чате: {original_id}")
-            
-            # Пытаемся получить чат напрямую
+            logger.info(f"🔍 Получаю информацию о чате: {chat_id}")
             chat = await self.client.get_chat(chat_id)
             
-            # Определяем тип чата
-            if chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
-                chat_type = "группа"
-            elif chat.type == ChatType.CHANNEL:
-                chat_type = "канал"
-            else:
-                chat_type = "личный"
-            
-            logger.info(f"✅ Чат найден: {getattr(chat, 'title', 'Личный чат')} ({chat_type})")
-            logger.info(f"   ID: {chat.id}")
+            chat_type = "группа" if chat.type in [ChatType.GROUP, ChatType.SUPERGROUP] else "канал" if chat.type == ChatType.CHANNEL else "личный"
+            logger.info(f"✅ Чат: {getattr(chat, 'title', 'Личный чат')} ({chat_type})")
             return chat
             
-        except (KeyError, ValueError) as e:
-            logger.warning(f"⚠️ Не удалось получить чат {original_id} напрямую: {e}")
-            logger.info("🔄 Получаю список всех диалогов для инициализации...")
-            
-            # Получаем все диалоги, чтобы "познакомить" клиента с чатом
-            found = None
-            async for dialog in self.client.get_dialogs():
-                if str(dialog.chat.id) == str(original_id) or dialog.chat.username == original_id:
-                    found = dialog.chat
-                    logger.info(f"✅ Чат найден в диалогах: {getattr(dialog.chat, 'title', 'Личный чат')}")
-                    break
-            
-            if found:
-                return found
-            
-            # Если не нашли, пробуем resolve_peer
-            try:
-                logger.info(f"🔄 Пробую resolve_peer для {original_id}...")
-                peer = await self.client.resolve_peer(original_id)
-                # Теперь должен работать
-                chat = await self.client.get_chat(original_id)
-                logger.info(f"✅ Чат успешно инициализирован через resolve_peer")
-                return chat
-            except Exception as e2:
-                logger.error(f"❌ Не удалось инициализировать чат: {e2}")
-                raise ValueError(f"Чат {original_id} не найден. Убедитесь, что аккаунт подписан на этот чат")
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения чата: {e}")
+            raise
+    
+    async def refresh_dialogs(self):
+        """Обновление кэша диалогов"""
+        self.dialog_cache = {}
+        async for dialog in self.client.get_dialogs():
+            self.dialog_cache[str(dialog.chat.id)] = dialog.chat
+            if dialog.chat.username:
+                self.dialog_cache[dialog.chat.username] = dialog.chat
+        logger.info(f"🔄 Загружено {len(self.dialog_cache)} диалогов в кэш")
     
     def get_topic_id_from_message(self, message):
         """
         Получение ID темы из сообщения
-        В Pyrogram ID темы лежит в message.reply_to_top_id
+        Основано на официальной документации Pyrogram и реальных проектах
         """
         if not message:
             return None
         
+        # Способ 1: Прямое поле reply_to_top_id (основной для Pyrogram)
         if hasattr(message, 'reply_to_top_id') and message.reply_to_top_id:
+            logger.debug(f"✅ Найден reply_to_top_id: {message.reply_to_top_id}")
             return message.reply_to_top_id
+        
+        # Способ 2: Проверяем, есть ли message_thread_id
+        if hasattr(message, 'message_thread_id') and message.message_thread_id:
+            logger.debug(f"📌 Найден message_thread_id: {message.message_thread_id}")
+            return message.message_thread_id
+        
+        # Способ 3: Проверяем атрибуты reply_to
+        if hasattr(message, 'reply_to') and message.reply_to:
+            logger.debug(f"📎 Есть reply_to: {message.reply_to}")
         
         return None
     
     async def get_topic_name(self, chat_id, topic_id: int) -> str | None:
-        """
-        Получение названия темы по ID через Pyrogram
-        Основано на: https://docs.pyrogram.org/api/methods/invoke
-        """
+        """Получение названия темы по ID"""
         try:
             logger.info(f"🔍 Запрашиваю название для темы ID: {topic_id}")
             
-            # Получаем InputChannel
-            channel = await self.client.resolve_peer(chat_id)
+            # Сначала проверяем, есть ли тема в истории сообщений
+            # TODO: Implement proper topic name fetching
             
-            # Вызываем метод Pyrogram
-            result = await self.client.invoke(
-                GetForumTopicsByID(
-                    channel=channel,
-                    topics=[topic_id]
-                )
-            )
+            # Пока возвращаем None, будем использовать ID
+            return None
             
-            # Проверяем результат
-            if result and hasattr(result, 'topics') and result.topics:
-                topic = result.topics[0]
-                if hasattr(topic, 'title'):
-                    topic_title = topic.title
-                    logger.info(f"✅ Найдено название темы: {topic_title}")
-                    return topic_title
-                else:
-                    logger.warning(f"⚠️ Тема не имеет атрибута title")
-                    logger.debug(f"Атрибуты темы: {dir(topic)}")
-            else:
-                logger.warning(f"⚠️ topics пуст или отсутствует в ответе")
-                    
         except Exception as e:
-            logger.error(f"❌ Ошибка получения названия темы {topic_id}: {e}", exc_info=True)
-        
-        return None
+            logger.error(f"❌ Ошибка получения названия темы {topic_id}: {e}")
+            return None
     
     async def get_messages(self, chat_id, min_id: int = 0, reverse: bool = True):
-        """
-        Получение сообщений из чата
-        Основано на: https://docs.pyrogram.org/api/methods/get_chat_history
-        """
+        """Получение сообщений из чата"""
         try:
-            # Преобразуем ID в число, если это строка
             if isinstance(chat_id, str):
                 try:
                     chat_id = int(chat_id)
                 except ValueError:
-                    # Если это username, оставляем как есть
                     pass
             
             messages = []
             async for message in self.client.get_chat_history(chat_id):
                 if message.id > min_id:
                     messages.append(message)
+                    # Логируем информацию о теме для отладки
+                    if hasattr(message, 'reply_to_top_id') and message.reply_to_top_id:
+                        logger.debug(f"📌 Сообщение {message.id} в теме {message.reply_to_top_id}")
             
             if reverse:
                 messages.sort(key=lambda x: x.id)
@@ -199,9 +155,6 @@ class TelegramDownloader:
             raise
     
     async def download_media(self, message, path: str) -> str:
-        """
-        Скачивание медиафайла
-        Основано на: https://docs.pyrogram.org/api/methods/download_media
-        """
+        """Скачивание медиафайла"""
         logger.info(f"📥 Скачивание: {path}")
         return await self.client.download_media(message, file_name=path)
