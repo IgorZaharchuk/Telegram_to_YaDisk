@@ -1,6 +1,6 @@
 """
 Telegram клиент на базе Pyrogram (форк с поддержкой тем)
-Установка: pip install https://github.com/KurimuzonAkuma/pyrogram/archive/refs/heads/master.zip
+Установка в workflow: pip install git+https://github.com/KurimuzonAkuma/pyrogram.git@master
 """
 
 import os
@@ -23,7 +23,7 @@ class TelegramDownloader:
         """Подключение к Telegram"""
         try:
             if self.session_string:
-                logger.info("🔑 Использую StringSession")
+                logger.info("🔑 Использую StringSession для форка Pyrogram")
                 self.client = Client(
                     name="pyro_session",
                     api_id=self.api_id,
@@ -40,7 +40,7 @@ class TelegramDownloader:
                 )
             
             await self.client.start()
-            logger.info("✅ Подключено к Telegram")
+            logger.info("✅ Подключено к Telegram через форк Pyrogram")
             
             self._me = self.client.me
             logger.info(f"👤 Пользователь: {self._me.first_name} (@{self._me.username})")
@@ -85,27 +85,15 @@ class TelegramDownloader:
         if not message:
             return None, None
         
-        # Проверяем наличие поля topic (из форка)
+        # В форке KurimuzonAkuma добавлено поле topic
         if hasattr(message, 'topic') and message.topic:
             return message.topic.id, message.topic.name
         
-        # Проверяем стандартные поля
+        # Стандартные поля (могут не работать в официальной версии)
         if hasattr(message, 'reply_to_top_message_id') and message.reply_to_top_message_id:
             return message.reply_to_top_message_id, None
         
         return None, None
-    
-    async def get_topic_name_by_id(self, chat_id, topic_id: int) -> str | None:
-        """
-        Получение названия темы по ID (если нужно)
-        """
-        try:
-            # В форке можно получить тему напрямую
-            # topic = await self.client.get_forum_topic(chat_id, topic_id)
-            # return topic.name
-            return None
-        except:
-            return None
     
     async def get_messages(self, chat_id, min_id: int = 0, limit: int = 100):
         """Получение сообщений из чата"""
@@ -114,6 +102,10 @@ class TelegramDownloader:
             async for msg in self.client.get_chat_history(chat_id, limit=limit):
                 if msg.id > min_id:
                     messages.append(msg)
+                    
+                    # Логируем наличие тем для отладки
+                    if hasattr(msg, 'topic') and msg.topic:
+                        logger.debug(f"📌 Сообщение {msg.id} в теме: {msg.topic.name} (ID: {msg.topic.id})")
             
             messages.sort(key=lambda x: x.id)
             logger.info(f"📨 Получено {len(messages)} сообщений")
