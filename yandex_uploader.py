@@ -1,6 +1,6 @@
 """
 Загрузка файлов на Яндекс.Диск
-Упрощенная версия с overwrite=False
+С правильной проверкой через listdir()
 """
 
 import os
@@ -67,9 +67,38 @@ class YandexUploader:
             logger.error(f"❌ Ошибка при создании папок: {e}")
             return False
     
+    async def file_exists(self, remote_dir: str, filename: str) -> bool:
+        """
+        Проверка существования файла на Яндекс.Диске через listdir()
+        Более надежный метод, чем exists()
+        :param remote_dir: Удалённая папка (полный путь)
+        :param filename: Имя файла
+        :return: True если файл существует
+        """
+        try:
+            # Проверяем, существует ли папка
+            if not await self.client.exists(remote_dir):
+                logger.debug(f"📁 Папка не существует: {remote_dir}")
+                return False
+            
+            # Получаем список файлов в папке
+            files = []
+            async for item in self.client.listdir(remote_dir):
+                if item['type'] == 'file':
+                    files.append(item['name'])
+            
+            logger.debug(f"📋 Файлы в папке: {files}")
+            exists = filename in files
+            logger.debug(f"🔍 Файл {filename}: {'НАЙДЕН' if exists else 'НЕ НАЙДЕН'}")
+            return exists
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка при проверке файла: {e}")
+            return False
+    
     async def upload(self, local_path: str, remote_dir: str, filename: str) -> bool:
         """
-        Загрузка файла на Яндекс.Диск
+        Загрузка файла на Яндекс.Диск с надежной проверкой
         :param local_path: Путь к локальному файлу
         :param remote_dir: Удалённая папка (полный путь)
         :param filename: Имя файла
@@ -81,9 +110,15 @@ class YandexUploader:
                 logger.error(f"❌ Не удалось создать папки {remote_dir}")
                 return False
             
-            remote_path = f"{remote_dir}/{filename}"
+            # Проверяем, есть ли уже такой файл
+            if await self.file_exists(remote_dir, filename):
+                logger.info(f"⏭️ Файл уже существует, пропускаем: {remote_dir}/{filename}")
+                return True
             
-            # Пытаемся загрузить с overwrite=False (не перезаписывать)
+            # Загружаем файл
+            remote_path = f"{remote_dir}/{filename}"
+            logger.info(f"📤 Загрузка нового файла: {remote_path}")
+            
             with open(local_path, 'rb') as f:
                 await self.client.upload(f, remote_path, overwrite=False)
             
@@ -91,10 +126,8 @@ class YandexUploader:
             return True
             
         except yadisk.exceptions.PathExistsError:
-            # Файл уже существует - это нормально, пропускаем
-            logger.info(f"⏭️ Файл уже существует, пропускаем: {remote_path}")
+            logger.info(f"⏭️ Файл уже существует (PathExistsError): {remote_dir}/{filename}")
             return True
-            
         except Exception as e:
             logger.error(f"❌ Ошибка загрузки: {e}")
             return False
