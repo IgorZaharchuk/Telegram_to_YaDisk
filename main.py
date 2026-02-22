@@ -103,21 +103,38 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
         # === ПОЛУЧАЕМ ID ТЕМЫ ИЗ СООБЩЕНИЯ ===
         topic_id = tg_client.get_topic_id_from_message(message)
         
+        # === ОТЛАДКА: показываем информацию о сообщении ===
+        logger.debug(f"📨 Обработка сообщения {message.id}")
+        logger.debug(f"   Тип: {'медиа' if message.media else 'текст'}")
+        logger.debug(f"   Дата: {message.date}")
+        
         # === ОПРЕДЕЛЯЕМ НАЗВАНИЕ ПАПКИ ===
         folder_name = "general"
         
         if topic_id:
-            # Получаем название темы из кэша (загружен через raw API)
+            logger.info(f"🔍 Найден ID темы: {topic_id}")
             topic_name = tg_client.get_topic_name(topic_id)
             
             if topic_name:
                 folder_name = sanitize_folder_name(topic_name)
-                logger.info(f"📁 Тема: {topic_name} (ID: {topic_id})")
+                logger.info(f"📁 Тема: {topic_name} (ID: {topic_id}) -> папка {folder_name}")
             else:
                 folder_name = f"topic_{topic_id}"
-                logger.info(f"📁 ID темы: {topic_id}")
+                logger.info(f"📁 ID темы: {topic_id} -> папка {folder_name}")
         else:
-            logger.info("📁 Сообщение вне темы")
+            logger.info(f"📁 Сообщение {message.id} вне темы -> папка general")
+            
+            # === ДОПОЛНИТЕЛЬНАЯ ОТЛАДКА ДЛЯ ПОИСКА ПРИЧИНЫ ===
+            # Проверяем наличие специальных полей в сообщении
+            special_fields = ['reply_to_top_message_id', 'message_thread_id', 'reply_to']
+            for field in special_fields:
+                if hasattr(message, field):
+                    value = getattr(message, field)
+                    logger.debug(f"   Поле {field}: {value}")
+            
+            # Если есть reply_to_message, покажем его ID
+            if hasattr(message, 'reply_to_message') and message.reply_to_message:
+                logger.debug(f"   reply_to_message.id: {message.reply_to_message.id}")
         
         # === ОПРЕДЕЛЕНИЕ ТИПА ФАЙЛА ===
         filename = None
@@ -128,29 +145,39 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
             photo_date = message.date.strftime('%Y%m%d_%H%M%S')
             filename = f"photo_{photo_date}.jpg"
             is_image = True
+            logger.debug(f"📸 Обнаружено фото")
             
         elif message.document:
+            logger.debug(f"📄 Обнаружен документ")
             if hasattr(message.document, 'file_name'):
                 filename = message.document.file_name
+                logger.debug(f"   Имя файла: {filename}")
             else:
                 ext = Path(message.document.mime_type or "").suffix or ".dat"
                 filename = f"document_{message.id}{ext}"
+                logger.debug(f"   Сгенерировано имя: {filename}")
             
             ext = Path(filename).suffix.lower()
             if ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']:
                 is_image = True
+                logger.debug(f"   Определено как изображение")
             elif ext in ['.mp4', '.avi', '.mkv', '.mov', '.wmv', '.webm']:
                 is_video = True
+                logger.debug(f"   Определено как видео")
         
         elif message.video:
+            logger.debug(f"🎬 Обнаружено видео")
             if hasattr(message.video, 'file_name') and message.video.file_name:
                 filename = message.video.file_name
+                logger.debug(f"   Имя файла: {filename}")
             else:
                 video_date = message.date.strftime('%Y%m%d_%H%M%S')
                 filename = f"video_{video_date}.mp4"
+                logger.debug(f"   Сгенерировано имя: {filename}")
             is_video = True
         
         if not filename:
+            logger.debug("⏭️ Сообщение не содержит медиафайл")
             return False, 0
         
         # === СКАЧИВАНИЕ ===
@@ -198,6 +225,8 @@ async def process_message(tg_client, message, yandex, topic_cache: dict) -> tupl
         
     except Exception as e:
         logger.error(f"❌ Ошибка обработки: {e}")
+        import traceback
+        traceback.print_exc()
         return False, 0
     
     finally:
@@ -214,6 +243,10 @@ async def main():
     # Проверка настроек
     if not API_ID or not API_HASH or not TARGET_CHAT_ID or not YA_DISK_TOKEN:
         logger.error("❌ Не все переменные окружения установлены")
+        logger.error(f"API_ID: {API_ID}")
+        logger.error(f"API_HASH: {'есть' if API_HASH else 'нет'}")
+        logger.error(f"TARGET_CHAT_ID: {TARGET_CHAT_ID}")
+        logger.error(f"YA_DISK_TOKEN: {'есть' if YA_DISK_TOKEN else 'нет'}")
         return 1
     
     if not STRING_SESSION and not PHONE_NUMBER:
