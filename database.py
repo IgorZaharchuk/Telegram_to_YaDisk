@@ -4,7 +4,7 @@
 ВЕРСИЯ 0.17.11 — ИСПРАВЛЕНИЯ: Singleton, индексы, пакетные операции
 """
 
-__version__ = "0.17.11"
+__version__ = "0.17.12"
 
 import os
 import json
@@ -843,6 +843,12 @@ class DatabaseManager:
                 if not self._loaded:
                     await self.init()
                     await self._load_settings()
+                    
+                    for key in ['paths', 'download', 'upload', 'compression', 'queue', 'telegram_client', 'file_types']:
+                        cursor = await self.execute("SELECT value FROM settings WHERE key = ?", (key,))
+                        if not await cursor.fetchone():
+                            await self._save_key(key, self._cache[key])
+                    
                     self._loaded = True
     
     async def _load_settings(self) -> None:
