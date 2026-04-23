@@ -95,9 +95,7 @@ docker-compose*.yml
 
 # Скрипты (игнорируем все, кроме разрешённых)
 *.sh
-!run_bot.sh
 !util/install.sh
-!util/run_bot.sh
 
 # Бэкапы
 *.bak
@@ -114,11 +112,14 @@ docker-compose*.yml
 .pdm-python
 .pdm-build
 
+# Локальные конфиги
+settings.json
+
+# Скрипт запуска (создаётся install.sh)
+run_bot.sh
+
 # Временные файлы БД
 *.db-shm
 *.db-wal
 backup.db
 backup.pid
-
-# Локальные конфиги
-settings.json
