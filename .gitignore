@@ -1,0 +1,125 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+pythonenv*
+
+# Виртуальное окружение
+venv/
+env/
+.env/
+.venv/
+
+# Файлы сессий
+*.session
+*.session-journal
+pyro_session/
+sessions/
+pyro_session.session
+pyro_session_maker.session
+
+# Логи
+*.log
+logs/
+bot.log
+bot.error.log
+backup.log
+console_*.log
+
+# Базы данных и JSON
+*.db
+*.sqlite
+*.sqlite3
+queue.json
+topic_cache.json
+stats_output.txt
+
+# Директория загрузок
+downloads/
+*.compressed.jpg
+*.compressed.mp4
+*.converted.jpg
+*.tmp
+
+# Файлы конфигурации
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Systemd
+*.service
+!telegram-bot@.service
+!telegram-bot.service
+
+# ID редакторов
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# GitHub Actions
+.github/
+
+# Временные файлы
+*.tmp
+*.temp
+*.pid
+*.lock
+/tmp/telegram_backup.lock
+
+# Артефакты тестов
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Дистрибутивы
+dist/
+build/
+*.egg-info/
+
+# Докер
+.dockerignore
+Dockerfile
+docker-compose*.yml
+
+# Скрипты
+*.sh
+!run_bot.sh
+!install_service.sh
+!pyro_session_maker.sh
+
+# Бэкапы
+*.bak
+*.backup
+
+# Линтеры и форматтеры
+.mypy_cache/
+.ruff_cache/
+.flake8
+.tox/
+
+# Прочее
+.python-version
+.pdm.toml
+.pdm-python
+.pdm-build
+*.db-shm
+*.db-wal
+backup.db
+backup.pid
+logs/
+downloads/
+sessions/
+venv/
+.env

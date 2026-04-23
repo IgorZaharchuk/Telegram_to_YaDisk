@@ -1,0 +1,16 @@
+# ========== ОСНОВНЫЕ ЗАВИСИМОСТИ ==========
+pyrogram>=2.0.106
+TgCrypto>=1.2.5
+yadisk[async-defaults]>=3.4.0
+Pillow>=10.2.0
+python-dotenv>=1.0.0
+
+# ========== TELEGRAM BOT ==========
+python-telegram-bot>=20.0
+
+# ========== БАЗА ДАННЫХ ==========
+aiosqlite>=0.19.0
+
+# ========== МОНИТОРИНГ И ОГРАНИЧЕНИЯ ==========
+psutil>=5.9.0
+aiolimiter>=1.1.0
