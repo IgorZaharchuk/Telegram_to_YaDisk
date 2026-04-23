@@ -17,7 +17,7 @@ BLUE = '\033[94m'
 RESET = '\033[0m'
 BOLD = '\033[1m'
 
-def print_colored(text, color='', bold=False):
+def print_colored(text: str, color: str = '', bold: bool = False) -> None:
     """Цветной вывод (если поддерживается терминалом)"""
     try:
         if sys.stdout.isatty() and color:
@@ -25,10 +25,10 @@ def print_colored(text, color='', bold=False):
             print(f"{prefix}{text}{RESET}")
         else:
             print(text)
-    except:
+    except Exception:
         print(text)
 
-def main():
+def main() -> None:
     """Главная функция проверки"""
     try:
         # Определяем корневую папку проекта (на один уровень выше util/)
@@ -70,9 +70,10 @@ def main():
                         print(f"  ✅ {folder:12} {description:15} ({file_count} файлов, {size:.1f} KB)")
                     else:
                         py_files = list(path.glob('*.py'))
-                        file_count = len(py_files)
-                        size = sum(f.stat().st_size for f in py_files) / 1024
-                        print(f"  ✅ {folder:12} {description:15} ({file_count} .py файлов, {size:.1f} KB)")
+                        sh_files = list(path.glob('*.sh'))
+                        file_count = len(py_files) + len(sh_files)
+                        size = sum(f.stat().st_size for f in py_files + sh_files if f.is_file()) / 1024
+                        print(f"  ✅ {folder:12} {description:15} ({file_count} файлов, {size:.1f} KB)")
                 else:
                     print(f"  ❌ {folder:12} {description:15} - не найдена")
                     path.mkdir(parents=True, exist_ok=True)
@@ -86,15 +87,20 @@ def main():
         print_colored("\n📄 ОСНОВНЫЕ ФАЙЛЫ:", YELLOW, bold=True)
         
         required_files = [
-            ('stats_collector.py', 'Статистика'),
+            ('database.py', 'База данных'),
+            ('queue_system.py', 'Система очередей'),
             ('telegram_client.py', 'Telegram клиент'),
             ('yandex_uploader.py', 'Яндекс.Диск'),
-            ('compress.py', 'Сжатие'),
+            ('compressor.py', 'Сжатие'),
             ('main.py', 'Основной скрипт'),
             ('telegram_bot.py', 'Telegram бот'),
             ('requirements.txt', 'Зависимости'),
+            ('.env.example', 'Шаблон конфига'),
             ('.env', 'Конфигурация'),
-            ('run_bot.sh', 'Скрипт запуска (корень)'),
+            ('run_bot.sh', 'Скрипт запуска'),
+            ('util/check_id.py', 'Проверка ID (util)'),
+            ('util/check_project.py', 'Проверка проекта (util)'),
+            ('util/pyro_session_maker.py', 'Создание сессии (util)'),
             ('util/run_bot.sh', 'Скрипт запуска (util)')
         ]
         
@@ -109,23 +115,25 @@ def main():
                         has_api = 'API_ID' in content and 'API_HASH' in content
                         has_token = 'YA_DISK_TOKEN' in content or 'BOT_TOKEN' in content
                         if has_api and has_token:
-                            status = f"✅ {file:25} {description:15} ({size:6} bytes) - настроен"
+                            status = f"✅ {file:30} {description:20} ({size:6} bytes) - настроен"
                         else:
-                            status = f"⚠️ {file:25} {description:15} ({size:6} bytes) - требует настройки"
+                            status = f"⚠️ {file:30} {description:20} ({size:6} bytes) - требует настройки"
                     else:
-                        status = f"✅ {file:25} {description:15} ({size:6} bytes)"
+                        status = f"✅ {file:30} {description:20} ({size:6} bytes)"
                     print(f"  {status}")
                 else:
-                    if file == 'run_bot.sh' and Path('util/run_bot.sh').exists():
+                    if file == '.env' and Path('.env.example').exists():
+                        print(f"  ⚠️ {file:30} {description:20} - не найден (скопируйте .env.example)")
+                    elif file == 'run_bot.sh' and Path('util/run_bot.sh').exists():
                         try:
                             os.symlink('util/run_bot.sh', 'run_bot.sh')
-                            print(f"  ✅ {file:25} {description:15} (симлинк создан)")
-                        except:
-                            print(f"  ⚠️ {file:25} {description:15} - не удалось создать симлинк")
+                            print(f"  ✅ {file:30} {description:20} (симлинк создан)")
+                        except Exception:
+                            print(f"  ⚠️ {file:30} {description:20} - не удалось создать симлинк")
                     else:
-                        print(f"  ❌ {file:25} {description:15} - не найден")
+                        print(f"  ❌ {file:30} {description:20} - не найден")
             except Exception as e:
-                print(f"  ⚠️ {file:25} - ошибка проверки: {e}")
+                print(f"  ⚠️ {file:30} - ошибка проверки: {e}")
         
         # =========================================================
         # 3. Проверка импорта модулей
@@ -133,10 +141,11 @@ def main():
         print_colored("\n📦 МОДУЛИ PYTHON:", YELLOW, bold=True)
         
         modules = [
-            ('stats_collector', 'Статистика'),
+            ('database', 'База данных'),
+            ('queue_system', 'Система очередей'),
             ('telegram_client', 'Telegram клиент'),
             ('yandex_uploader', 'Яндекс.Диск'),
-            ('compress', 'Сжатие'),
+            ('compressor', 'Сжатие'),
             ('telegram_bot', 'Telegram бот'),
             ('main', 'Основной скрипт'),
             ('aiolimiter', 'Адаптивный лимитер'),
@@ -144,7 +153,8 @@ def main():
             ('yadisk', 'YaDisk API'),
             ('PIL', 'Pillow'),
             ('psutil', 'PSUtil'),
-            ('dotenv', 'DotEnv')
+            ('dotenv', 'DotEnv'),
+            ('aiosqlite', 'AioSQLite')
         ]
         
         all_ok = True
@@ -152,12 +162,12 @@ def main():
             try:
                 mod = importlib.import_module(module)
                 version = getattr(mod, '__version__', 'unknown')
-                print(f"  ✅ {module:20} {description:15} v{version}")
+                print(f"  ✅ {module:20} {description:20} v{version}")
             except ImportError as e:
-                print(f"  ❌ {module:20} {description:15} - {str(e)}")
+                print(f"  ❌ {module:20} {description:20} - {str(e)}")
                 all_ok = False
             except Exception as e:
-                print(f"  ⚠️ {module:20} {description:15} - ошибка: {str(e)[:50]}")
+                print(f"  ⚠️ {module:20} {description:20} - ошибка: {str(e)[:50]}")
                 all_ok = False
         
         # =========================================================
@@ -175,17 +185,30 @@ def main():
                     result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True, timeout=2)
                     version = result.stdout.split('\n')[0].split(' ')[2] if result.stdout else 'unknown'
                     print(f"  ✅ ffmpeg: {ffmpeg_path} (версия {version})")
-                except:
+                except Exception:
                     print(f"  ✅ ffmpeg: {ffmpeg_path}")
             else:
                 print(f"  ❌ ffmpeg: не найден (нужен для сжатия видео)")
                 all_ok = False
+            
+            ffprobe_path = shutil.which('ffprobe')
+            if ffprobe_path:
+                print(f"  ✅ ffprobe: {ffprobe_path}")
+            else:
+                print(f"  ⚠️ ffprobe: не найден (нужен для анализа видео)")
             
             heif_path = shutil.which('heif-convert')
             if heif_path:
                 print(f"  ✅ heif-convert: {heif_path}")
             else:
                 print(f"  ⚠️ heif-convert: не найден (HEIC конвертация недоступна)")
+            
+            cpulimit_path = shutil.which('cpulimit')
+            if cpulimit_path:
+                print(f"  ✅ cpulimit: {cpulimit_path}")
+            else:
+                print(f"  ℹ️ cpulimit: не найден (опционально)")
+                
         except Exception as e:
             print(f"  ⚠️ Ошибка проверки системных зависимостей: {e}")
         
@@ -194,7 +217,7 @@ def main():
         # =========================================================
         print_colored("\n🐍 СОВМЕСТИМОСТЬ PYTHON:", YELLOW, bold=True)
         
-        required_version = (3, 7)
+        required_version = (3, 8)
         current_version = sys.version_info[:2]
         if current_version >= required_version:
             print(f"  ✅ Python {current_version[0]}.{current_version[1]} (требуется {required_version[0]}.{required_version[1]}+)")
@@ -227,6 +250,8 @@ def main():
                     print(f"  ✅ .env: права {mode} (безопасно)")
                 else:
                     print(f"  ⚠️ .env: права {mode} (рекомендуется 600)")
+            else:
+                print(f"  ℹ️ .env: файл не найден")
             
             run_path = Path('run_bot.sh')
             if run_path.exists():
@@ -234,6 +259,15 @@ def main():
                     print(f"  ✅ run_bot.sh: исполняемый")
                 else:
                     print(f"  ⚠️ run_bot.sh: не исполняемый (chmod +x run_bot.sh)")
+                    
+            sessions_path = Path('sessions')
+            if sessions_path.exists():
+                mode = oct(sessions_path.stat().st_mode)[-3:]
+                if mode == '700':
+                    print(f"  ✅ sessions/: права 700 (безопасно)")
+                else:
+                    print(f"  ⚠️ sessions/: права {mode} (рекомендуется 700)")
+                    
         except Exception as e:
             print(f"  ⚠️ Ошибка проверки прав: {e}")
         
@@ -243,10 +277,11 @@ def main():
         print_colored("\n📊 КРАТКАЯ СТАТИСТИКА:", YELLOW, bold=True)
         
         py_files = [
-            'stats_collector.py',
+            'database.py',
+            'queue_system.py',
             'telegram_client.py',
             'yandex_uploader.py',
-            'compress.py',
+            'compressor.py',
             'main.py',
             'telegram_bot.py'
         ]
@@ -267,6 +302,43 @@ def main():
         
         print(f"  {'='*28}")
         print(f"  {'ВСЕГО':20} {total_lines:6} строк")
+        
+        # =========================================================
+        # 9. Проверка базы данных
+        # =========================================================
+        print_colored("\n🗄️ БАЗА ДАННЫХ:", YELLOW, bold=True)
+        
+        db_path = Path('backup.db')
+        if db_path.exists():
+            size = db_path.stat().st_size / (1024 * 1024)
+            print(f"  ✅ backup.db: {size:.1f} MB")
+            
+            try:
+                import sqlite3
+                conn = sqlite3.connect(str(db_path))
+                cursor = conn.cursor()
+                
+                # Количество файлов
+                cursor.execute("SELECT COUNT(*) FROM files")
+                files_count = cursor.fetchone()[0]
+                print(f"     📄 Файлов в БД: {files_count}")
+                
+                # Количество чатов
+                cursor.execute("SELECT COUNT(*) FROM chat_names")
+                chats_count = cursor.fetchone()[0]
+                print(f"     📁 Чатов: {chats_count}")
+                
+                # Статус очереди
+                cursor.execute("SELECT COUNT(*) FROM queue_items WHERE status NOT IN ('completed', 'failed')")
+                pending = cursor.fetchone()[0]
+                if pending > 0:
+                    print(f"     ⏳ В очереди: {pending} файлов")
+                
+                conn.close()
+            except Exception as e:
+                print(f"     ⚠️ Ошибка чтения БД: {e}")
+        else:
+            print(f"  ℹ️ backup.db: ещё не создана")
         
         # =========================================================
         # Итог
