@@ -93,11 +93,11 @@ build/
 Dockerfile
 docker-compose*.yml
 
-# Скрипты
+# Скрипты (игнорируем все, кроме разрешённых)
 *.sh
 !run_bot.sh
-!install_service.sh
-!pyro_session_maker.sh
+!util/install.sh
+!util/run_bot.sh
 
 # Бэкапы
 *.bak
@@ -107,29 +107,18 @@ docker-compose*.yml
 .mypy_cache/
 .ruff_cache/
 .flake8
-.tox/
 
 # Прочее
 .python-version
 .pdm.toml
 .pdm-python
 .pdm-build
+
+# Временные файлы БД
 *.db-shm
 *.db-wal
 backup.db
 backup.pid
-logs/
-downloads/
-sessions/
-venv/
-.env
+
+# Локальные конфиги
 settings.json
-*.db-shm
-*.db-wal
-backup.db
-backup.pid
-settings.json
-*.db-shm
-*.db-wal
-backup.db
-backup.pid
