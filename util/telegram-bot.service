@@ -1,0 +1,51 @@
+[Unit]
+Description=Telegram to YaDisk Backup Bot for %i
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+Group=%i
+WorkingDirectory=/home/%i/Telegram_to_YaDisk
+Environment="HOME=/home/%i"
+Environment="USER=%i"
+ExecStart=/home/%i/Telegram_to_YaDisk/run_bot.sh
+Restart=always
+RestartSec=10
+
+# Логирование
+StandardOutput=append:/home/%i/Telegram_to_YaDisk/logs/bot.log
+StandardError=append:/home/%i/Telegram_to_YaDisk/logs/bot.error.log
+SyslogIdentifier=tg2ya-bot-%i
+
+# Настройки безопасности (усиленные)
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ReadWritePaths=/home/%i/Telegram_to_YaDisk
+ReadWritePaths=/home/%i/Telegram_to_YaDisk/downloads
+ReadWritePaths=/home/%i/Telegram_to_YaDisk/logs
+
+# Защита от записи истории (дополнительно)
+Environment="HISTFILE=/dev/null"
+Environment="HISTFILESIZE=0"
+Environment="HISTSIZE=0"
+
+# Ограничения ресурсов
+LimitNOFILE=65536
+LimitNPROC=65536
+MemoryMax=2G
+CPUQuota=80%
+
+# Завершение
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
