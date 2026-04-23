@@ -4,7 +4,9 @@
 # =============================================================================
 # Режим 1: Клонирование + установка
 # Режим 2: Установка в текущую папку
-# Режим 3: Настройка systemd сервиса (для уже установленного)
+# Режим 3: Управление systemd сервисом
+#   - 3.1: Установка и настройка сервиса
+#   - 3.2: Удаление сервиса
 # =============================================================================
 set -e
 
@@ -26,14 +28,14 @@ print_error() { echo "❌ $1"; }
 print_divider() { echo "────────────────────────────────────────────────────────"; }
 
 # ════════════════════════════════════════════════════════════
-# 1. ВЫБОР РЕЖИМА (3 варианта!)
+# 1. ВЫБОР РЕЖИМА
 # ════════════════════════════════════════════════════════════
 choose_installation_mode() {
     print_step "Выбор режима установки..."
     echo ""
     echo "  1) Клонировать репозиторий в ~/Telegram_to_YaDisk (полная установка)"
     echo "  2) Установить в текущую папку: $(pwd) (полная установка)"
-    echo "  3) Настроить systemd сервис (для уже установленного бота)"
+    echo "  3) Управление systemd сервисом"
     echo ""
     read -p "Ваш выбор (1/2/3): " INSTALL_MODE
     
@@ -52,15 +54,9 @@ choose_installation_mode() {
             SETUP_SYSTEMD_LATER=true
             ;;
         3)
-            print_info "Режим 3: Настройка systemd сервиса"
-            CLONE_REPO=false
-            SETUP_SYSTEMD_LATER=false
-            INSTALL_DIR="$HOME/Telegram_to_YaDisk"
-            if [[ ! -d "$INSTALL_DIR" ]]; then
-                print_error "Директория $INSTALL_DIR не найдена!"
-                print_info "Сначала выполните установку в режиме 1 или 2"
-                exit 1
-            fi
+            print_info "Режим 3: Управление systemd сервисом"
+            choose_systemd_action
+            return
             ;;
         *)
             print_error "Неверный выбор"
@@ -68,6 +64,42 @@ choose_installation_mode() {
             ;;
     esac
     echo ""
+}
+
+# ════════════════════════════════════════════════════════════
+# 1a. ВЫБОР ДЕЙСТВИЯ С SYSTEMD (режим 3)
+# ════════════════════════════════════════════════════════════
+choose_systemd_action() {
+    echo ""
+    echo "  3.1) Установить и настроить systemd сервис"
+    echo "  3.2) Удалить systemd сервис"
+    echo "  3.3) Вернуться в главное меню"
+    echo ""
+    read -p "Ваш выбор (1/2/3): " SYSTEMD_ACTION
+    
+    case "$SYSTEMD_ACTION" in
+        1)
+            INSTALL_DIR="$HOME/Telegram_to_YaDisk"
+            if [[ ! -d "$INSTALL_DIR" ]]; then
+                print_error "Директория $INSTALL_DIR не найдена!"
+                print_info "Сначала выполните установку в режиме 1 или 2"
+                exit 1
+            fi
+            setup_systemd_service
+            show_final_info_systemd
+            ;;
+        2)
+            remove_systemd_service
+            ;;
+        3)
+            choose_installation_mode
+            return
+            ;;
+        *)
+            print_error "Неверный выбор"
+            exit 1
+            ;;
+    esac
 }
 
 # ════════════════════════════════════════════════════════════
@@ -229,7 +261,7 @@ create_run_script() {
     
     print_step "Создание скрипта запуска..."
     
-    cat > "util/run_bot.sh" << 'RUNEOF'
+    cat > "run_bot.sh" << 'RUNEOF'
 #!/bin/bash
 # run_bot.sh - Запуск Telegram бота
 
@@ -246,8 +278,7 @@ echo "🚀 Запуск telegram_bot.py..."
 exec python telegram_bot.py
 RUNEOF
     
-    chmod +x "util/run_bot.sh"
-    [[ ! -f "run_bot.sh" ]] && ln -s "util/run_bot.sh" "run_bot.sh" 2>/dev/null || true
+    chmod +x run_bot.sh
     print_success "run_bot.sh создан"
 }
 
@@ -272,7 +303,7 @@ run_project_check() {
 }
 
 # ════════════════════════════════════════════════════════════
-# 11. НАСТРОЙКА SYSTEMD (режим 3 ИЛИ вопрос в конце 1/2)
+# 11. НАСТРОЙКА SYSTEMD (режим 3.1 или вопрос в конце 1/2)
 # ════════════════════════════════════════════════════════════
 setup_systemd_service() {
     print_step "Настройка systemd сервиса..."
@@ -283,15 +314,6 @@ setup_systemd_service() {
     echo "  • С автоматическим перезапуском при сбоях"
     echo ""
     
-    if [[ "$SETUP_SYSTEMD_LATER" == true ]]; then
-        read -p "Настроить systemd сервис сейчас? (y/N): " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            print_info "Пропущено (можно настроить позже в режиме 3)"
-            return
-        fi
-    fi
-    
     if [[ ! -d "$HOME/Telegram_to_YaDisk" ]]; then
         print_warning "Директория ~/Telegram_to_YaDisk не найдена"
         print_info "Systemd сервис доступен только для установки в домашнюю директорию"
@@ -300,11 +322,27 @@ setup_systemd_service() {
     
     cd "$HOME/Telegram_to_YaDisk" || return
     
-    if [[ ! -f "util/telegram-bot.service" ]]; then
-        print_warning "util/telegram-bot.service не найден"
-        print_info "Создаю базовый шаблон..."
-        
-        cat > "util/telegram-bot.service" << 'SVCEOF'
+    # Проверяем, что run_bot.sh существует
+    if [[ ! -f "run_bot.sh" ]]; then
+        print_warning "run_bot.sh не найден, создаю..."
+        cat > "run_bot.sh" << 'RUNEOF'
+#!/bin/bash
+cd ~/Telegram_to_YaDisk || { echo "❌ Директория не найдена"; exit 1; }
+echo "🔄 Активация виртуального окружения..."
+source venv/bin/activate || { echo "❌ Ошибка активации"; exit 1; }
+echo "🛑 Завершение старых процессов бота..."
+pkill -f "python.*telegram_bot.py" 2>/dev/null || true
+sleep 1
+echo "🚀 Запуск telegram_bot.py..."
+exec python telegram_bot.py
+RUNEOF
+        chmod +x run_bot.sh
+        print_success "run_bot.sh создан"
+    fi
+    
+    # Создаём сервис
+    print_step "Создание файла сервиса..."
+    sudo tee /etc/systemd/system/tg2ya-bot.service > /dev/null << EOF
 [Unit]
 Description=Telegram to YaDisk Backup Bot
 After=network.target network-online.target
@@ -312,16 +350,16 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=%USER%
-Group=%USER%
-WorkingDirectory=%HOME%/Telegram_to_YaDisk
-Environment="HOME=%HOME%"
-Environment="USER=%USER%"
-ExecStart=%HOME%/Telegram_to_YaDisk/run_bot.sh
+User=$(whoami)
+Group=$(whoami)
+WorkingDirectory=$HOME/Telegram_to_YaDisk
+Environment="HOME=$HOME"
+Environment="USER=$(whoami)"
+ExecStart=$HOME/Telegram_to_YaDisk/run_bot.sh
 Restart=always
 RestartSec=10
-StandardOutput=append:%HOME%/Telegram_to_YaDisk/logs/bot.log
-StandardError=append:%HOME%/Telegram_to_YaDisk/logs/bot_error.log
+StandardOutput=append:$HOME/Telegram_to_YaDisk/logs/bot.log
+StandardError=append:$HOME/Telegram_to_YaDisk/logs/bot_error.log
 SyslogIdentifier=tg2ya-bot
 
 KillMode=mixed
@@ -330,16 +368,10 @@ TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target
-SVCEOF
-        
-        sed -i "s|%USER%|$(whoami)|g" "util/telegram-bot.service"
-        sed -i "s|%HOME%|$HOME|g" "util/telegram-bot.service"
-        print_success "Шаблон сервиса создан"
-    fi
+EOF
     
-    print_step "Копирование сервиса в systemd..."
-    sudo cp util/telegram-bot.service /etc/systemd/system/tg2ya-bot.service
     sudo systemctl daemon-reload
+    print_success "Файл сервиса создан"
     
     echo ""
     read -p "Включить и запустить сервис сейчас? (y/N): " -n 1 -r
@@ -360,34 +392,54 @@ SVCEOF
         echo "  sudo systemctl enable tg2ya-bot.service"
         echo "  sudo systemctl start tg2ya-bot.service"
     fi
-    
-    echo ""
-    print_info "Управление сервисом:"
-    echo "  sudo systemctl status tg2ya-bot      # Статус"
-    echo "  sudo systemctl stop tg2ya-bot        # Остановить"
-    echo "  sudo systemctl restart tg2ya-bot     # Перезапустить"
-    echo "  sudo journalctl -u tg2ya-bot -f      # Логи"
 }
 
 # ════════════════════════════════════════════════════════════
-# 12. Финальная информация
+# 12. УДАЛЕНИЕ SYSTEMD СЕРВИСА (режим 3.2)
+# ════════════════════════════════════════════════════════════
+remove_systemd_service() {
+    print_step "Удаление systemd сервиса..."
+    echo ""
+    
+    if [[ ! -f "/etc/systemd/system/tg2ya-bot.service" ]]; then
+        print_warning "Сервис tg2ya-bot.service не найден"
+        return
+    fi
+    
+    echo "Будет выполнено:"
+    echo "  • sudo systemctl stop tg2ya-bot.service"
+    echo "  • sudo systemctl disable tg2ya-bot.service"
+    echo "  • sudo rm /etc/systemd/system/tg2ya-bot.service"
+    echo "  • sudo systemctl daemon-reload"
+    echo ""
+    read -p "Продолжить? (y/N): " -n 1 -r
+    echo
+    
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        print_info "Удаление отменено"
+        return
+    fi
+    
+    sudo systemctl stop tg2ya-bot.service 2>/dev/null || true
+    sudo systemctl disable tg2ya-bot.service 2>/dev/null || true
+    sudo rm -f /etc/systemd/system/tg2ya-bot.service
+    sudo systemctl daemon-reload
+    
+    print_success "✅ Systemd сервис удалён"
+}
+
+# ════════════════════════════════════════════════════════════
+# 13. Финальная информация (полная установка)
 # ════════════════════════════════════════════════════════════
 show_final_info() {
     print_divider
-    
-    if [[ "$SETUP_SYSTEMD_LATER" == true ]]; then
-        print_success "🎉 Установка завершена!"
-    else
-        print_success "🎉 Systemd сервис настроен!"
-    fi
-    
+    print_success "🎉 Установка завершена!"
     print_divider
     echo ""
     echo "📋 Информация:"
     echo "  • Директория: $INSTALL_DIR"
     echo "  • Режим: $([ "$CLONE_REPO" == true ] && echo "клонирование" || echo "текущая папка")"
     echo ""
-    
     echo "📂 Основные модули:"
     echo "  • database.py - база данных"
     echo "  • queue_system.py - система очередей"
@@ -397,27 +449,31 @@ show_final_info() {
     echo "  • telegram_bot.py - бот управления"
     echo "  • main.py - оркестратор"
     echo ""
-    
-    if [[ "$SETUP_SYSTEMD_LATER" == true ]]; then
-        echo "🚀 Запуск бота:"
-        echo "  ./run_bot.sh"
-        echo ""
-        echo "📝 Конфигурация:"
-        echo "  nano .env"
-        echo ""
-        echo "🔍 Проверка:"
-        echo "  python3 util/check_project.py"
-        echo ""
-        echo "🔧 Systemd сервис (опционально):"
-        echo "  Запустите ./util/install.sh и выберите режим 3"
-        echo ""
-    else
-        echo "🔧 Управление сервисом:"
-        echo "  sudo systemctl status tg2ya-bot"
-        echo "  sudo systemctl restart tg2ya-bot"
-        echo "  sudo journalctl -u tg2ya-bot -f"
-        echo ""
-    fi
+    echo "🚀 Запуск бота:"
+    echo "  ./run_bot.sh"
+    echo ""
+    echo "📝 Конфигурация:"
+    echo "  nano .env"
+    echo ""
+    echo "🔍 Проверка:"
+    echo "  python3 util/check_project.py"
+    echo ""
+}
+
+# ════════════════════════════════════════════════════════════
+# 14. Финальная информация (systemd)
+# ════════════════════════════════════════════════════════════
+show_final_info_systemd() {
+    print_divider
+    print_success "🎉 Systemd сервис настроен!"
+    print_divider
+    echo ""
+    echo "🔧 Управление сервисом:"
+    echo "  sudo systemctl status tg2ya-bot      # Статус"
+    echo "  sudo systemctl stop tg2ya-bot        # Остановить"
+    echo "  sudo systemctl restart tg2ya-bot     # Перезапустить"
+    echo "  sudo journalctl -u tg2ya-bot -f      # Логи"
+    echo ""
 }
 
 # ════════════════════════════════════════════════════════════
@@ -427,6 +483,11 @@ main() {
     print_header
     
     choose_installation_mode
+    
+    # Если выбран режим 3, он обрабатывается внутри choose_installation_mode
+    if [[ "$INSTALL_MODE" == "3" ]]; then
+        exit 0
+    fi
     
     if [[ "$SETUP_SYSTEMD_LATER" == true ]]; then
         clone_repository
@@ -438,13 +499,17 @@ main() {
         setup_permissions
         create_run_script
         run_project_check
-        setup_systemd_service
-    else
-        enter_project_dir
-        setup_systemd_service
+        
+        echo ""
+        read -p "Настроить systemd сервис сейчас? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            setup_systemd_service
+            show_final_info_systemd
+        else
+            show_final_info
+        fi
     fi
-    
-    show_final_info
 }
 
 trap 'echo ""; print_error "Установка прервана"; exit 1' INT
