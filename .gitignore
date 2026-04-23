@@ -123,3 +123,13 @@ downloads/
 sessions/
 venv/
 .env
+settings.json
+*.db-shm
+*.db-wal
+backup.db
+backup.pid
+settings.json
+*.db-shm
+*.db-wal
+backup.db
+backup.pid
