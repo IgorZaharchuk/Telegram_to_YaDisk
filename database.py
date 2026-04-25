@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 Единый модуль работы с базой данных SQLite
-ВЕРСИЯ 0.17.11 — ИСПРАВЛЕНИЯ: Singleton, индексы, пакетные операции
+ВЕРСИЯ 0.17.13 — ИСПРАВЛЕНИЯ: get_file_state, try-except в update_progress
 """
 
-__version__ = "0.17.12"
+__version__ = "0.17.13"
 
 import os
 import json
@@ -476,6 +476,14 @@ class DatabaseManager:
         row: Optional[aiosqlite.Row] = await cursor.fetchone()
         return row['md5'] if row else None
     
+    async def get_file_state(self, chat_id: int, message_id: int) -> Optional[int]:
+        """Возвращает статус файла."""
+        cursor: aiosqlite.Cursor = await self.execute(
+            "SELECT state FROM files WHERE chat_id = ? AND message_id = ?",
+            (chat_id, message_id))
+        row: Optional[aiosqlite.Row] = await cursor.fetchone()
+        return row['state'] if row else None
+    
     async def add_queue_item(self, item: dict) -> bool:
         """Добавляет элемент в очередь."""
         await self.ensure_loaded()
@@ -630,7 +638,7 @@ class DatabaseManager:
         """Добавляет запись о обработке элемента."""
         try:
             now: float = time.time()
-            await self.execute("INSERT INTO queue_processing (key, worker_id, worker_type, started_at, updated_at) VALUES (?, ?, ?, ?, ?)", (key, worker_id, worker_type, now, now))
+            await self.execute("INSERT OR IGNORE INTO queue_processing (key, worker_id, worker_type, started_at, updated_at) VALUES (?, ?, ?, ?, ?)", (key, worker_id, worker_type, now, now))
             await self.commit()
             return True
         except Exception:
@@ -675,9 +683,12 @@ class DatabaseManager:
     async def update_progress(self, key: str, data: dict) -> None:
         """Обновляет прогресс обработки."""
         now: float = time.time()
-        await self.execute("INSERT OR REPLACE INTO active_progress (key, stage, progress, speed, eta, downloaded, uploaded, total_size, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (key, data.get('stage', ''), data.get('progress'), data.get('speed'), data.get('eta'), data.get('downloaded'), data.get('uploaded'), data.get('total_size'), now))
-        await self.execute("UPDATE queue_processing SET updated_at = ? WHERE key = ?", (now, key))
-        await self.commit()
+        try:
+            await self.execute("INSERT OR REPLACE INTO active_progress (key, stage, progress, speed, eta, downloaded, uploaded, total_size, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (key, data.get('stage', ''), data.get('progress'), data.get('speed'), data.get('eta'), data.get('downloaded'), data.get('uploaded'), data.get('total_size'), now))
+            await self.execute("UPDATE queue_processing SET updated_at = ? WHERE key = ?", (now, key))
+            await self.commit()
+        except Exception:
+            pass
     
     async def clear_progress(self, key: str) -> None:
         """Очищает прогресс элемента."""
@@ -699,6 +710,7 @@ class DatabaseManager:
         try:
             await self.add_history(entry)
         except Exception as e:
+            await self.rollback()
             logger.error(f"❌ Ошибка записи в history: {e}")
         if event_type == 'uploaded':
             actual_size: int = kwargs.get('compressed_size') or kwargs.get('size', 0)
@@ -1103,8 +1115,8 @@ class DatabaseManager:
             new_count: int = sum(1 for f in files if f['state'] == STATE_NEW)
             unloaded: int = sum(1 for f in files if f['state'] == STATE_UNLOADED)
             errors: int = sum(1 for f in files if f['state'] == STATE_ERROR)
-            selected: int = total if t['is_selected'] else sum(1 for f in files if f['state'] == STATE_SELECTED)
-            result.append({'topic_id': tid, 'topic_name': t['topic_name'], 'total': total, 'uploaded': uploaded, 'new': new_count, 'unloaded': unloaded, 'errors': errors, 'selected': selected, 'pending': total - uploaded, 'is_selected': t['is_selected'], 'is_fully_uploaded': uploaded == total})
+            selected: int = sum(1 for f in files if f['state'] == STATE_SELECTED)
+            result.append({'topic_id': tid, 'topic_name': t['topic_name'], 'total': total, 'uploaded': uploaded, 'new': new_count, 'unloaded': unloaded, 'errors': errors, 'selected': selected, 'pending': total - uploaded - sum(1 for f in files if f['state'] == STATE_SKIPPED), 'is_selected': t['is_selected'], 'is_fully_uploaded': uploaded == total})
         return result
     
     async def generate_bot_status(self) -> dict:

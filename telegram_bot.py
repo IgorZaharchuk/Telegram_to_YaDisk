@@ -66,8 +66,12 @@ file_handler.setFormatter(formatter)
 console_handler.setFormatter(formatter)
 logging.basicConfig(level=logging.INFO, handlers=[file_handler, console_handler])
 
-for noisy in ("yadisk", "asyncio", "urllib3", "httpcore", "httpx", "telegram", "aiosqlite"):
+for noisy in ("yadisk", "asyncio", "urllib3", "httpcore", "httpx", "aiosqlite"):
     logging.getLogger(noisy).setLevel(logging.ERROR)
+
+logging.getLogger("telegram").setLevel(logging.WARNING)
+logging.getLogger("telegram.ext.Application").setLevel(logging.WARNING)
+logging.getLogger("telegram.ext.ExtBot").setLevel(logging.WARNING)
 
 class CancelledErrorFilter(logging.Filter):
     """Фильтр для подавления логов CancelledError."""
@@ -161,7 +165,16 @@ class BotState:
     _menu: Dict[int, str] = field(default_factory=dict)
     _files_state: Dict[str, dict] = field(default_factory=dict)
     _watcher_tasks: Dict[str, asyncio.Task] = field(default_factory=dict)
+    _edit_in_progress: Dict[int, bool] = field(default_factory=dict)
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    
+    async def is_editing(self, uid: int) -> bool:
+        async with self._lock:
+            return self._edit_in_progress.get(uid, False)
+    
+    async def set_editing(self, uid: int, value: bool) -> None:
+        async with self._lock:
+            self._edit_in_progress[uid] = value
     
     async def get_msg(self, uid: int) -> Optional[int]:
         """Возвращает ID сообщения для пользователя."""
@@ -281,21 +294,21 @@ async def _telegram_request(bot: Any, uid: int, action: str, text: str, msg_id: 
             _flood.handle_retry_after(e)
             if e.retry_after < 60:
                 continue
-            return None
+            return 0
         except BadRequest as e:
             if "Message is not modified" in str(e):
-                return msg_id if action == 'edit' else None
+                return msg_id if action == 'edit' else 0
             if action == 'edit' and "message to edit not found" in str(e):
                 await _bot_state.pop_msg(uid)
                 return await _telegram_request(bot, uid, 'send', text, None, kb, parse_mode, timeout)
             logger.error(f"❌ BadRequest: {str(e)[:100]}")
-            return None
+            return 0
         except Exception as e:
             if attempt < 2:
                 await asyncio.sleep(2 ** attempt)
             else:
                 logger.error(f"❌ Ошибка: {e}")
-    return None
+    return 0
 
 
 async def safe_edit_or_send(bot: Any, uid: int, edit_id: Optional[int], text: str,
@@ -612,9 +625,7 @@ def format_active_files(status: dict, context: str = 'main', max_items: Optional
         show_progress: bool = size > 10 * 1024 * 1024
         
         if op_type == 'download':
-            lines.append(f"📥 {filename}")
-            if size:
-                lines.append(f"   {size_str}")
+            lines.append(f"📥 {filename}  {size_str}")
             if context == 'main' and progress > 0 and show_progress:
                 lines.append(f"   {fmt_bar(progress)}")
             elif context == 'stats' and progress > 0:
@@ -624,17 +635,15 @@ def format_active_files(status: dict, context: str = 'main', max_items: Optional
             speed: float = item.get('speed', 0)
             eta: Optional[float] = item.get('eta')
             cache_key: str = f"compress_speed_{item.get('filename', '')}"
-            if speed > 0:
+            if (speed or 0) > 0:
                 _compress_speed_cache[cache_key] = (speed, eta)
             elif cache_key in _compress_speed_cache:
                 speed, eta = _compress_speed_cache[cache_key]
             
-            lines.append(f"🗜️ {filename}")
-            if size:
-                lines.append(f"   {size_str}")
+            lines.append(f"🗜️ {filename}  {size_str}")
             if context == 'main' and progress > 0 and show_progress:
                 lines.append(f"   {fmt_bar(progress)}")
-                if speed > 0:
+                if (speed or 0) > 0:
                     info: str = f"   x{speed:.1f}"
                     if eta:
                         info += f" | ETA {int(eta)}с"
@@ -642,16 +651,14 @@ def format_active_files(status: dict, context: str = 'main', max_items: Optional
             elif context == 'stats':
                 if progress > 0:
                     lines[-1] = f"   {size_str} {progress:.0f}%"
-                if speed > 0:
+                if (speed or 0) > 0:
                     info = f"   x{speed:.1f}"
                     if eta:
                         info += f" | ETA {int(eta)}с"
                     lines.append(info)
                     
         elif op_type == 'upload':
-            lines.append(f"📤 {filename}")
-            if size:
-                lines.append(f"   {size_str}")
+            lines.append(f"📤 {filename}  {size_str}")
             if context == 'main' and progress > 0 and show_progress:
                 lines.append(f"   {fmt_bar(progress)}")
             elif context == 'stats' and progress > 0:
@@ -697,8 +704,8 @@ async def _format_menu(db: DatabaseManager, detailed: bool = False) -> str:
         line += f" ⏭️ Пропущено: {summary.get('skipped', 0)}"
     lines.append(line)
     
-    file_errors: int = summary.get('file_errors', 0)
-    system_errors: int = summary.get('system_errors', 0)
+    file_errors: int = summary.get('file_errors') or 0
+    system_errors: int = summary.get('system_errors') or 0
     if file_errors > 0 or system_errors > 0:
         lines.append(f"❌ Ошибок: 📄{file_errors} / ⚙️{system_errors}")
     
@@ -775,26 +782,18 @@ async def watch_menu(uid: int, bot: Any, menu_name: str, format_func: Callable, 
     """Наблюдает за меню и обновляет при изменениях."""
     last_hash: Optional[str] = None
     errors: int = 0
-    last_sent: float = 0
     try:
         while True:
             await asyncio.sleep(C.UPDATE_INTERVAL)
             if await _bot_state.get_menu(uid) != menu_name:
                 break
             if errors >= 5:
-                errors += 1
-                if errors > 10:
-                    logger.warning(f"⚠️ Watcher для пользователя {uid} остановлен после {errors} ошибок")
-                    try:
-                        await bot.send_message(
-                            chat_id=uid,
-                            text="⚠️ Автообновление отключено из-за ошибок. Нажмите /start для перезапуска."
-                        )
-                    except Exception:
-                        pass
-                    break
-                continue
+                logger.warning(f"⚠️ Watcher для {uid} остановлен после {errors} ошибок")
+                break
             try:
+                if await _bot_state.is_editing(uid):
+                    continue
+                    
                 text: str = await format_func()
                 text_hash: str = hashlib.md5(text.encode()).hexdigest()
                 if text_hash != last_hash:
@@ -802,13 +801,20 @@ async def watch_menu(uid: int, bot: Any, menu_name: str, format_func: Callable, 
                     msg_id: Optional[int] = await _bot_state.get_msg(uid)
                     if msg_id:
                         kb: InlineKeyboardMarkup = kb_func()
-                        if await safe_edit(bot, uid, msg_id, text, kb):
+                        await _bot_state.set_editing(uid, True)
+                        try:
+                            await safe_edit(bot, uid, msg_id, text, kb)
                             errors = 0
-                            last_sent = time.time()
-                        else:
-                            errors += 1
+                        finally:
+                            await _bot_state.set_editing(uid, False)
+            except RetryAfter as e:
+                wait = min(e.retry_after + 5, 120)
+                logger.warning(f"🌊 Watcher flood: ждём {wait}с")
+                await asyncio.sleep(wait)
+                errors = 0
             except Exception:
                 errors += 1
+                await asyncio.sleep(min(errors * 5, 30))
     except asyncio.CancelledError:
         pass
 
@@ -2025,15 +2031,20 @@ _shutdown: asyncio.Event = asyncio.Event()
 
 
 async def schedule_manager(app: Application) -> None:
-    """Менеджер расписания."""
+    """Менеджер расписания — ТОЛЬКО запуск/остановка main.py, без API запросов."""
     check_interval: int = 60
     while not _shutdown.is_set():
         try:
             db: DatabaseManager = await get_db()
-            status: dict = await get_cached_bot_status(db)
-            auto: bool = status.get('auto_enabled', False)
-            windows: List[Dict[str, str]] = status.get('windows', [])
-            should_run: bool = auto and windows and await db.should_run_now()
+            auto: bool = await db.is_auto_enabled()
+            if not auto:
+                await asyncio.sleep(check_interval)
+                continue
+            windows: List[dict] = await db.get_windows()
+            if not windows:
+                await asyncio.sleep(check_interval)
+                continue
+            should_run: bool = await db.should_run_now()
             
             if should_run:
                 if not is_backup_running():
@@ -2110,6 +2121,7 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if uid not in ALLOWED_USERS:
         await q.answer("⛔ Доступ запрещён")
         return
+    logger.info(f"📱 [{uid}] Кнопка: {q.data}")
     edit_id: int = q.message.message_id
     await _bot_state.set_msg(uid, edit_id)
     try:
@@ -2146,6 +2158,8 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def shutdown_bot(app: Application, scheduler: Optional[asyncio.Task] = None) -> None:
     """Останавливает бота."""
+    if _shutdown.is_set():
+        return  # Уже останавливаемся
     logger.info("🛑 Останавливаем бота...")
     _shutdown.set()
     if scheduler and not scheduler.done():
@@ -2171,42 +2185,74 @@ async def shutdown_bot(app: Application, scheduler: Optional[asyncio.Task] = Non
 
 def main() -> None:
     """Точка входа."""
+    logger.info("🔌 Подключение к Telegram API...")
     app: Application = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input))
     app.add_error_handler(error_handler)
     logger.info(f"🚀 Бот запущен v{__version__}")
+    logger.info("✅ Бот готов к приёму команд")
     
     loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
     async def run() -> None:
+        await asyncio.sleep(3)  # Задержка чтобы не флудить при старте
         scheduler: asyncio.Task = asyncio.create_task(schedule_manager(app))
-        try:
-            await app.initialize()
-            await app.start()
-            await app.updater.start_polling(allowed_updates=["message", "callback_query"],
-                                            drop_pending_updates=True, poll_interval=5.0, timeout=30)
-            while not _shutdown.is_set():
-                await asyncio.sleep(0.5)
-        except asyncio.CancelledError:
-            pass
-        finally:
-            await shutdown_bot(app, scheduler)
+        connect_errors: int = 0
+        max_delay: int = 300
+        
+        while not _shutdown.is_set():
+            try:
+                await app.initialize()
+                await app.start()
+                await app.updater.start_polling(allowed_updates=["message", "callback_query"],
+                                                drop_pending_updates=True, poll_interval=5.0, timeout=30)
+                connect_errors = 0
+                while not _shutdown.is_set():
+                    await asyncio.sleep(0.5)
+            except asyncio.CancelledError:
+                _shutdown.set()
+                break
+            except KeyboardInterrupt:
+                _shutdown.set()
+                break
+            except Exception as e:
+                connect_errors += 1
+                delay: float = min(5 * (2 ** (connect_errors - 1)), max_delay)
+                logger.warning(f"⚠️ Ошибка подключения (попытка {connect_errors}), повтор через {delay:.0f}с: {e}")
+                try:
+                    await shutdown_bot(app, scheduler)
+                except Exception:
+                    pass
+                await asyncio.sleep(delay)
+        
+        await shutdown_bot(app, scheduler)
     
     try:
         loop.run_until_complete(run())
     except KeyboardInterrupt:
+        _shutdown.set()
         logger.info("👋 Прервано пользователем")
     finally:
-        pending: Set[asyncio.Task] = asyncio.all_tasks(loop)
-        for task in pending:
-            task.cancel()
-        if pending:
-            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-        loop.close()
+        try:
+            pending: Set[asyncio.Task] = asyncio.all_tasks(loop)
+            for task in pending:
+                task.cancel()
+            if pending:
+                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        except KeyboardInterrupt:
+            pass
+        except Exception:
+            pass
+        try:
+            loop.close()
+        except Exception:
+            pass
         logger.info("👋 Бот завершён")
+        import os as _os
+        _os._exit(0)
 
 
 if __name__ == "__main__":

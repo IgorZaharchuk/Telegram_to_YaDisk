@@ -387,7 +387,7 @@ class Compressor:
             success, compressed_size = await asyncio.wait_for(
                 loop.run_in_executor(pool, self._compress_photo_sync,
                                      file_path, temp_path, self.max_image_dimension, self.image_quality),
-                timeout=300)
+                timeout=600)
             
             if not success or not os.path.exists(temp_path):
                 raise Exception("Compression failed")
