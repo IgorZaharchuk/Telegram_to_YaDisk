@@ -4,7 +4,7 @@
 ВЕРСИЯ 0.17.2 — ИСПРАВЛЕНИЯ: REGEX ДЛЯ FFMPEG, ДЕЛЕНИЕ НА НОЛЬ
 """
 
-__version__ = "0.17.2"
+__version__ = "0.17.18"
 
 import os
 import asyncio

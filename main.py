@@ -4,7 +4,7 @@ Telegram MTProto Backup to Yandex Disk - ОРКЕСТРАТОР
 ВЕРСИЯ 0.17.1 — ИСПРАВЛЕНИЯ: HEALTHCHECKER ПРОВЕРЯЕТ RECONNECT
 """
 
-__version__ = "0.17.1"
+__version__ = "0.17.18"
 
 import os
 import sys
