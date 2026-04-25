@@ -4,7 +4,7 @@ Telegram Bot для управления Backup
 ВЕРСИЯ 0.17.11 — ИСПРАВЛЕНИЯ: УВЕДОМЛЕНИЕ ПРИ ОТКЛЮЧЕНИИ WATCHER
 """
 
-__version__ = "0.17.11"
+__version__ = "0.17.18"
 
 import os
 import sys

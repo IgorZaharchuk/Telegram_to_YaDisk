@@ -4,7 +4,7 @@
 ВЕРСИЯ 0.17.13 — ИСПРАВЛЕНИЯ: get_file_state, try-except в update_progress
 """
 
-__version__ = "0.17.13"
+__version__ = "0.17.18"
 
 import os
 import json
