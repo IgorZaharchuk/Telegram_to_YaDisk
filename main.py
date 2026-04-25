@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram MTProto Backup to Yandex Disk - ОРКЕСТРАТОР
-ВЕРСИЯ 0.17.1 — ИСПРАВЛЕНИЯ: HEALTHCHECKER ПРОВЕРЯЕТ RECONNECT
+ВЕРСИЯ 0.17.18 — ИСПРАВЛЕНИЯ: HEALTHCHECKER ПРОВЕРЯЕТ RECONNECT
 """
 
 __version__ = "0.17.18"
