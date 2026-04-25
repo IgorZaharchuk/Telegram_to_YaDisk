@@ -164,64 +164,6 @@ class ExponentialBackoff:
         return True
 
 
-class HealthChecker:
-    """Проверяет здоровье сервисов и переподключает при необходимости."""
-    
-    def __init__(self, check_interval: float = 30.0, failure_threshold: int = 3) -> None:
-        """Инициализирует HealthChecker."""
-        self.check_interval: float = check_interval
-        self.failure_threshold: int = failure_threshold
-        self._status: Dict[str, str] = {}
-        self._failure_counts: Dict[str, int] = {}
-        self._task: Optional[asyncio.Task] = None
-        self._shutdown_flag: bool = False
-        self._tg: Optional[TelegramDownloader] = None
-        self._ya: Optional[YandexUploader] = None
-        self._shutdown_manager: Optional['ShutdownManager'] = None
-
-    def set_shutdown_manager(self, shutdown_manager: 'ShutdownManager') -> None:
-        """Устанавливает менеджер завершения."""
-        self._shutdown_manager = shutdown_manager
-
-    async def start(self, tg: TelegramDownloader, ya: YandexUploader) -> None:
-        """Запускает проверку здоровья."""
-        self._tg = tg
-        self._ya = ya
-        self._task = asyncio.create_task(self._checker())
-
-    async def stop(self) -> None:
-        """Останавливает проверку здоровья."""
-        self._shutdown_flag = True
-        if self._task:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-
-    async def _checker(self) -> None:
-        """Основной цикл проверки."""
-        await asyncio.sleep(10)
-        while not self._shutdown_flag:
-            for service, client in [('telegram', self._tg), ('yandex', self._ya)]:
-                if client:
-                    if await client.is_healthy():
-                        self._failure_counts[service] = 0
-                        self._status[service] = 'healthy'
-                    else:
-                        self._failure_counts[service] = self._failure_counts.get(service, 0) + 1
-                        if self._failure_counts[service] >= self.failure_threshold:
-                            self._status[service] = 'unhealthy'
-                            if await client.reconnect():
-                                self._failure_counts[service] = 0
-                                self._status[service] = 'healthy'
-                                logger.info(f"✅ {service} переподключён")
-                            else:
-                                logger.error(f"❌ {service} не удалось переподключить")
-                                if self._shutdown_manager:
-                                    asyncio.create_task(self._shutdown_manager.request(f"{service}_unhealthy"))
-            await asyncio.sleep(self.check_interval)
-
 
 class ShutdownManager:
     """Управляет graceful shutdown."""
@@ -254,8 +196,7 @@ class ShutdownManager:
             await self._components['tg'].disconnect()
         if 'ya' in self._components:
             await self._components['ya'].disconnect()
-        if 'health_checker' in self._components:
-            await self._components['health_checker'].stop()
+
         
         logger.info("✅ Все компоненты остановлены")
 
@@ -345,12 +286,11 @@ async def main_async(scan_only: bool = False, full_scan: bool = False,
         remove_pid()
         return 1
 
-    health_checker: HealthChecker = HealthChecker()
-    health_checker.set_shutdown_manager(shutdown)
+
     queue_system: QueueSystem = QueueSystem(tg, ya, comp, db, await db.get_download_dir())
     queue_system.set_shutdown_manager(shutdown)
 
-    shutdown.set_components(health_checker=health_checker, queue_system=queue_system, tg=tg, ya=ya, comp=comp)
+    shutdown.set_components(queue_system=queue_system, tg=tg, ya=ya, comp=comp)
 
     if scan_only:
         mode: str = 'full' if full_scan else ('incremental' if incremental else 'full')
@@ -359,7 +299,6 @@ async def main_async(scan_only: bool = False, full_scan: bool = False,
         remove_pid()
         return 0
 
-    await health_checker.start(tg, ya)
 
     try:
         await queue_system.process_selected_files()
@@ -371,7 +310,10 @@ async def main_async(scan_only: bool = False, full_scan: bool = False,
     finally:
         if not shutdown.is_requested():
             await shutdown.request("cleanup")
-        await db.checkpoint()
+        try:
+            await db.checkpoint()
+        except Exception:
+            pass
         await db.close()
         remove_pid()
 
@@ -407,4 +349,12 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    import warnings
+    warnings.filterwarnings("ignore", message=".*Event loop is closed.*")
+    # Глушим трейсбек из asyncio subprocess __del__ при выходе
+    import sys as _sys
+    _original_excepthook = _sys.excepthook
+    def _quiet_excepthook(*args):
+        pass
+    _sys.excepthook = _quiet_excepthook
     sys.exit(main())

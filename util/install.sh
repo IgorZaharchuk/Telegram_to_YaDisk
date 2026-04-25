@@ -261,25 +261,24 @@ create_run_script() {
     
     print_step "Создание скрипта запуска..."
     
-    cat > "run_bot.sh" << 'RUNEOF'
+    cat > "run_bot.sh" << RUNEOF
 #!/bin/bash
-# run_bot.sh - Запуск Telegram бота
+cd $HOME/Telegram_to_YaDisk || { echo "❌ Директория не найдена"; exit 1; }
 
-cd ~/Telegram_to_YaDisk || { echo "❌ Директория не найдена"; exit 1; }
+# Проверка: если бот уже запущен — выходим
+if pgrep -f "python.*telegram_bot.py" > /dev/null; then
+    echo "⚠️ Бот уже запущен, выхожу"
+    exit 0
+fi
 
 echo "🔄 Активация виртуального окружения..."
 source venv/bin/activate || { echo "❌ Ошибка активации"; exit 1; }
-
-echo "🛑 Завершение старых процессов бота..."
-pkill -f "python.*telegram_bot.py" 2>/dev/null || true
-sleep 1
-
 echo "🚀 Запуск telegram_bot.py..."
 exec python telegram_bot.py
 RUNEOF
     
     chmod +x run_bot.sh
-    print_success "run_bot.sh создан"
+    print_success "run_bot.sh создан (с проверкой двойного запуска)"
 }
 
 # ════════════════════════════════════════════════════════════
@@ -322,25 +321,27 @@ setup_systemd_service() {
     
     cd "$HOME/Telegram_to_YaDisk" || return
     
-    # Проверяем, что run_bot.sh существует
-    if [[ ! -f "run_bot.sh" ]]; then
-        print_warning "run_bot.sh не найден, создаю..."
-        cat > "run_bot.sh" << 'RUNEOF'
+    # Пересоздаём run_bot.sh (чистый, без pkill, с проверкой двойного запуска)
+    print_step "Создание run_bot.sh..."
+    cat > "run_bot.sh" << RUNEOF
 #!/bin/bash
-cd ~/Telegram_to_YaDisk || { echo "❌ Директория не найдена"; exit 1; }
+cd $HOME/Telegram_to_YaDisk || { echo "❌ Директория не найдена"; exit 1; }
+
+# Проверка: если бот уже запущен — выходим
+if pgrep -f "python.*telegram_bot.py" > /dev/null; then
+    echo "⚠️ Бот уже запущен, выхожу"
+    exit 0
+fi
+
 echo "🔄 Активация виртуального окружения..."
 source venv/bin/activate || { echo "❌ Ошибка активации"; exit 1; }
-echo "🛑 Завершение старых процессов бота..."
-pkill -f "python.*telegram_bot.py" 2>/dev/null || true
-sleep 1
 echo "🚀 Запуск telegram_bot.py..."
 exec python telegram_bot.py
 RUNEOF
-        chmod +x run_bot.sh
-        print_success "run_bot.sh создан"
-    fi
+    chmod +x run_bot.sh
+    print_success "run_bot.sh создан"
     
-    # Создаём сервис
+    # Создаём сервис с текущим пользователем
     print_step "Создание файла сервиса..."
     sudo tee /etc/systemd/system/tg2ya-bot.service > /dev/null << EOF
 [Unit]
@@ -484,7 +485,6 @@ main() {
     
     choose_installation_mode
     
-    # Если выбран режим 3, он обрабатывается внутри choose_installation_mode
     if [[ "$INSTALL_MODE" == "3" ]]; then
         exit 0
     fi
