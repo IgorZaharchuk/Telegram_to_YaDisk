@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Единый модуль работы с базой данных SQLite
-ВЕРСИЯ 0.17.13 — ИСПРАВЛЕНИЯ: get_file_state, try-except в update_progress
+ВЕРСИЯ 0.17.18 — ИСПРАВЛЕНИЯ: get_file_state, try-except в update_progress
 """
 
 __version__ = "0.17.18"
