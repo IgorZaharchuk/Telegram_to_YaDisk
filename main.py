@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 Telegram MTProto Backup to Yandex Disk - ОРКЕСТРАТОР
-ВЕРСИЯ 0.17.18 — ИСПРАВЛЕНИЯ: HEALTHCHECKER ПРОВЕРЯЕТ RECONNECT
+ВЕРСИЯ 0.18.0 — СЕССИОННЫЕ СЧЁТЧИКИ, PAUSED ПО QP_UPDATED_AT
 """
 
-__version__ = "0.17.18"
+__version__ = "0.18.0"
 
 import os
 import sys

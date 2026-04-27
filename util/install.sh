@@ -120,8 +120,11 @@ clone_repository() {
         return
     fi
     
-    print_warning "git clone не сработал, скачиваю ZIP..."
-    wget -q https://github.com/IgorZaharchuk/Telegram_to_YaDisk/archive/refs/heads/main.zip -O /tmp/tg.zip
+    print_warning "git clone не сработал (проверьте интернет), скачиваю ZIP..."
+    wget -q https://github.com/IgorZaharchuk/Telegram_to_YaDisk/archive/refs/heads/main.zip -O /tmp/tg.zip || {
+        print_error "Не удалось скачать ZIP. Проверьте интернет-соединение."
+        exit 1
+    }
     unzip -q /tmp/tg.zip -d "$HOME"
     mv "$HOME/Telegram_to_YaDisk-main" "$INSTALL_DIR"
     rm /tmp/tg.zip
@@ -144,7 +147,15 @@ install_dependencies() {
     
     print_step "Установка системных зависимостей..."
     sudo apt-get update -qq
-    sudo apt-get install -y -qq python3 python3-pip python3-venv git curl wget ffmpeg cpulimit libheif-examples jq --no-install-recommends
+    sudo apt-get install -y -qq python3 python3-pip python3-venv git curl wget ffmpeg cpulimit jq --no-install-recommends
+    
+    # libheif-examples может называться по-разному в разных версиях Ubuntu
+    if apt-cache show libheif-examples &>/dev/null; then
+        sudo apt-get install -y -qq libheif-examples --no-install-recommends
+    else
+        print_warning "Пакет libheif-examples не найден в репозитории (конвертация HEIC будет недоступна)"
+    fi
+    
     print_success "Зависимости установлены"
 }
 
@@ -155,6 +166,12 @@ create_venv() {
     [[ "$SETUP_SYSTEMD_LATER" != true ]] && return
     
     print_step "Создание виртуального окружения..."
+    
+    if ! command -v python3 &>/dev/null; then
+        print_error "python3 не установлен!"
+        exit 1
+    fi
+    
     [[ -d "venv" ]] && { print_warning "venv существует"; rm -rf venv; }
     python3 -m venv venv
     source "$(pwd)/venv/bin/activate"
@@ -230,7 +247,14 @@ create_session() {
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             read -r NEW_SESSION
-            [[ -n "$NEW_SESSION" ]] && sed -i "s|^STRING_SESSION=.*|STRING_SESSION=$NEW_SESSION|" .env 2>/dev/null || echo "STRING_SESSION=$NEW_SESSION" >> .env
+            if [[ -n "$NEW_SESSION" ]]; then
+                python3 -c "
+import re
+s = open('.env').read()
+s = re.sub(r'^STRING_SESSION=.*', 'STRING_SESSION=' + '''"'"'${NEW_SESSION}'"'"''', s, flags=re.M)
+open('.env','w').write(s)
+" 2>/dev/null || echo "STRING_SESSION=$NEW_SESSION" >> .env
+            fi
             print_success "STRING_SESSION обновлена"
         fi
     else
@@ -265,20 +289,32 @@ create_run_script() {
 #!/bin/bash
 cd $HOME/Telegram_to_YaDisk || { echo "❌ Директория не найдена"; exit 1; }
 
-# Проверка: если бот уже запущен — выходим
-if pgrep -f "python.*telegram_bot.py" > /dev/null; then
-    echo "⚠️ Бот уже запущен, выхожу"
-    exit 0
+# Убить старые процессы бота (кроме себя)
+CURRENT_PID=\$\$
+OLD_PIDS=\$(pgrep -f "python.*telegram_bot.py" 2>/dev/null | grep -v "\$CURRENT_PID" || true)
+if [[ -n "\$OLD_PIDS" ]]; then
+    echo "🛑 Завершение старых процессов бота: \$OLD_PIDS"
+    kill \$OLD_PIDS 2>/dev/null || true
+    sleep 2
+    STILL=\$(pgrep -f "python.*telegram_bot.py" 2>/dev/null | grep -v "\$CURRENT_PID" || true)
+    [[ -n "\$STILL" ]] && kill -9 \$STILL 2>/dev/null || true
 fi
 
 echo "🔄 Активация виртуального окружения..."
 source venv/bin/activate || { echo "❌ Ошибка активации"; exit 1; }
 echo "🚀 Запуск telegram_bot.py..."
-exec python telegram_bot.py
+
+# Цикл перезапуска при падении
+while true; do
+    python telegram_bot.py
+    EXIT_CODE=\$?
+    echo "⚠️ Бот упал с кодом \$EXIT_CODE, перезапуск через 5с..."
+    sleep 5
+done
 RUNEOF
     
     chmod +x run_bot.sh
-    print_success "run_bot.sh создан (с проверкой двойного запуска)"
+    print_success "run_bot.sh создан (автоперезапуск при падении, защита от двойного запуска)"
 }
 
 # ════════════════════════════════════════════════════════════
@@ -290,8 +326,8 @@ run_project_check() {
     print_step "Проверка проекта..."
     if [[ -f "util/check_project.py" ]]; then
         source "$(pwd)/venv/bin/activate" 2>/dev/null || true
-        python3 util/check_project.py
-        if [[ $? -eq 0 ]]; then
+        python3 util/check_project.py || true
+        if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
             print_success "✅ Все проверки пройдены!"
         else
             print_warning "⚠️ Есть проблемы (проверьте вывод выше)"
@@ -321,25 +357,8 @@ setup_systemd_service() {
     
     cd "$HOME/Telegram_to_YaDisk" || return
     
-    # Пересоздаём run_bot.sh (чистый, без pkill, с проверкой двойного запуска)
-    print_step "Создание run_bot.sh..."
-    cat > "run_bot.sh" << RUNEOF
-#!/bin/bash
-cd $HOME/Telegram_to_YaDisk || { echo "❌ Директория не найдена"; exit 1; }
-
-# Проверка: если бот уже запущен — выходим
-if pgrep -f "python.*telegram_bot.py" > /dev/null; then
-    echo "⚠️ Бот уже запущен, выхожу"
-    exit 0
-fi
-
-echo "🔄 Активация виртуального окружения..."
-source venv/bin/activate || { echo "❌ Ошибка активации"; exit 1; }
-echo "🚀 Запуск telegram_bot.py..."
-exec python telegram_bot.py
-RUNEOF
-    chmod +x run_bot.sh
-    print_success "run_bot.sh создан"
+    # Пересоздаём run_bot.sh
+    create_run_script
     
     # Создаём сервис с текущим пользователем
     print_step "Создание файла сервиса..."
@@ -386,6 +405,8 @@ EOF
             print_success "✅ Сервис запущен и работает"
         else
             print_warning "⚠️ Сервис не запустился (проверьте: sudo journalctl -u tg2ya-bot)"
+            print_info "Отключаем автозапуск до исправления проблемы..."
+            sudo systemctl disable tg2ya-bot.service 2>/dev/null || true
         fi
     else
         print_info "Сервис установлен но не запущен"

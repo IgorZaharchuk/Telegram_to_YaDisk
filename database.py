@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 Единый модуль работы с базой данных SQLite
-ВЕРСИЯ 0.17.18 — ИСПРАВЛЕНИЯ: get_file_state, try-except в update_progress
+ВЕРСИЯ 0.18.0 — _write_lock ДЛЯ ВСЕХ ТРАНЗАКЦИЙ, COUNT(DISTINCT), SESSION_STATS
 """
 
-__version__ = "0.17.18"
+__version__ = "0.18.0"
 
 import os
 import json
@@ -163,13 +163,14 @@ class DatabaseManager:
     _instance: Optional['DatabaseManager'] = None
     _db: Optional[aiosqlite.Connection] = None
     _lock: asyncio.Lock = asyncio.Lock()
+    _write_lock: asyncio.Lock = asyncio.Lock()
     
     DEFAULT_PATHS: Dict[str, str] = {'download_dir': 'downloads', 'logs_dir': 'logs', 'sessions_dir': 'sessions'}
     DEFAULT_DOWNLOAD: Dict[str, int] = {'max_concurrent': 3, 'min_concurrent': 1, 'max_concurrent_max': 5, 'rate_limit_calls': 30, 'rate_limit_period': 60}
     DEFAULT_UPLOAD: Dict[str, Any] = {'base_path': '/tg_backup', 'min_free_space_mb': 100, 'rate_limit_calls': 100, 'rate_limit_period': 60, 'max_concurrent_uploads': 3, 'upload_timeout': 60}
     DEFAULT_COMPRESSION: Dict[str, Any] = {'min_photo_size_kb': 500, 'image_quality': 92, 'convert_heic': True, 'min_video_size_mb': 15, 'min_video_duration': 10, 'video_crf': 23, 'video_preset': 'veryfast', 'video_threads': 2, 'photo_processes': 4, 'skip_efficient_codecs': True, 'use_cpulimit': True, 'video_cpu_limit': 80, 'low_priority': True}
-    DEFAULT_QUEUE: Dict[str, int] = {'check_workers': 5, 'download_workers': 3, 'photo_workers': 2, 'video_workers': 1, 'upload_workers': 3}
-    DEFAULT_TELEGRAM_CLIENT: Dict[str, Any] = {'topics_cache_ttl': 86400, 'dialogs_cache_ttl': 300, 'rate_limit_calls': 30, 'rate_limit_period': 60, 'max_concurrent_downloads': 3, 'min_concurrent_downloads': 1, 'max_concurrent_downloads_max': 5}
+    DEFAULT_QUEUE: Dict[str, int] = {'check_workers': 10, 'download_workers': 6, 'photo_workers': 2, 'video_workers': 1, 'upload_workers': 5}
+    DEFAULT_TELEGRAM_CLIENT: Dict[str, Any] = {'topics_cache_ttl': 86400, 'dialogs_cache_ttl': 300, 'rate_limit_calls': 30, 'rate_limit_period': 60, 'max_concurrent_downloads': 3, 'min_concurrent_downloads': 1, 'max_concurrent_downloads_max': 8}
     DEFAULT_FILE_TYPES: Dict[str, List[str]] = {
         'photo': ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif', '.gif', '.bmp', '.tiff'],
         'video': ['.mp4', '.avi', '.mkv', '.mov', '.wmv', '.webm', '.flv', '.m4v', '.3gp'],
@@ -339,7 +340,7 @@ class DatabaseManager:
         if data:
             await self.executemany("INSERT OR IGNORE INTO files (chat_id, topic_id, message_id, filename, file_type, size, state, attempts, last_error, file_id, dc_id, timestamp, md5) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", data)
             await self.commit()
-            cursor: aiosqlite.Cursor = await self.execute("SELECT COUNT(*), COALESCE(SUM(size), 0) FROM files WHERE chat_id = ?", (chat_id,))
+            cursor: aiosqlite.Cursor = await self.execute("SELECT COUNT(DISTINCT message_id), COALESCE(SUM(DISTINCT size), 0) FROM files WHERE chat_id = ?", (chat_id,))
             row: aiosqlite.Row = await cursor.fetchone()
             actual_total: int = row[0]
             actual_bytes: int = row[1]
@@ -354,15 +355,16 @@ class DatabaseManager:
     
     async def _with_transaction(self, operation: Callable[[aiosqlite.Connection], Awaitable[Any]]) -> Any:
         """Выполняет операцию в транзакции."""
-        db: aiosqlite.Connection = await self.get_connection()
-        await db.execute("BEGIN IMMEDIATE")
-        try:
-            result: Any = await operation(db)
-            await db.commit()
-            return result
-        except Exception as e:
-            await db.rollback()
-            raise
+        async with self._write_lock:
+            db: aiosqlite.Connection = await self.get_connection()
+            await db.execute("BEGIN IMMEDIATE")
+            try:
+                result: Any = await operation(db)
+                await db.commit()
+                return result
+            except Exception as e:
+                await db.rollback()
+                raise
     
     async def select_topic(self, chat_id: int, topic_id: int) -> None:
         """Выбирает тему для загрузки."""
@@ -579,12 +581,13 @@ class DatabaseManager:
     
     async def clear_queue(self) -> None:
         """Очищает все очереди."""
-        await self.execute("DELETE FROM queue_items")
-        await self.execute("DELETE FROM queue_processing")
-        await self.execute("DELETE FROM queue_retry")
-        await self.execute("DELETE FROM active_progress")
-        await self.commit()
-        logger.info("🗑️ Очередь очищена")
+        async with self._write_lock:
+            await self.execute("DELETE FROM queue_items")
+            await self.execute("DELETE FROM queue_processing")
+            await self.execute("DELETE FROM queue_retry")
+            await self.execute("DELETE FROM active_progress")
+            await self.commit()
+            logger.info("🗑️ Очередь очищена")
     
     async def count_pending(self) -> int:
         """Возвращает количество ожидающих задач."""
@@ -651,8 +654,9 @@ class DatabaseManager:
     
     async def clear_processing(self) -> None:
         """Очищает все записи о обработке."""
-        await self.execute("DELETE FROM queue_processing")
-        await self.commit()
+        async with self._write_lock:
+            await self.execute("DELETE FROM queue_processing")
+            await self.commit()
     
     async def get_processing_keys(self) -> Set[str]:
         """Возвращает ключи обрабатываемых элементов."""
@@ -661,7 +665,7 @@ class DatabaseManager:
     
     async def get_active_items(self) -> List[dict]:
         """Возвращает активные элементы очереди."""
-        cursor: aiosqlite.Cursor = await self.execute("SELECT qi.*, qp.worker_id, qp.worker_type, qp.started_at, ap.stage, ap.progress, ap.speed, ap.eta, ap.downloaded, ap.uploaded, ap.total_size FROM queue_items qi JOIN queue_processing qp ON qi.key = qp.key LEFT JOIN active_progress ap ON qi.key = ap.key")
+        cursor: aiosqlite.Cursor = await self.execute("SELECT qi.*, qp.worker_id, qp.worker_type, qp.started_at, qp.updated_at as qp_updated_at, ap.stage, ap.progress, ap.speed, ap.eta, ap.downloaded, ap.uploaded, ap.total_size, ap.updated_at as ap_updated_at FROM queue_items qi JOIN queue_processing qp ON qi.key = qp.key LEFT JOIN active_progress ap ON qi.key = ap.key")
         items: List[dict] = []
         for row in await cursor.fetchall():
             item: dict = dict(row)
@@ -819,10 +823,11 @@ class DatabaseManager:
     
     async def clear_errors(self) -> None:
         """Очищает все ошибки."""
-        await self.execute("DELETE FROM file_errors")
-        await self.execute("DELETE FROM system_errors")
-        await self.commit()
-        logger.info("📋 Ошибки очищены")
+        async with self._write_lock:
+            await self.execute("DELETE FROM file_errors")
+            await self.execute("DELETE FROM system_errors")
+            await self.commit()
+            logger.info("📋 Ошибки очищены")
     
     async def get_error_counts(self) -> Tuple[int, int]:
         """Возвращает количество ошибок файлов и системы."""
@@ -998,15 +1003,16 @@ class DatabaseManager:
         chat_saved_bytes: int
         chat_total_bytes: int
         chat_uploaded, chat_compressed, chat_saved_bytes, chat_total_bytes = (row['uploaded'], row['compressed'], row['saved_bytes'], row['total_bytes']) if row else (0, 0, 0, 0)
-        for table in ['queue_items', 'files', 'topics', 'chat_names', 'chat_stats', 'scan_progress', 'history', 'file_errors']:
-            await self.execute(f"DELETE FROM {table} WHERE chat_id = ?", (chat_id,))
-        if chat_uploaded > 0:
-            await self.execute("UPDATE stage_stats SET processed = MAX(0, processed - ?), success = MAX(0, success - ?), updated_at = ? WHERE stage = 'upload'", (chat_uploaded, chat_uploaded, time.time()))
-        if chat_compressed > 0 or chat_saved_bytes > 0:
-            await self.execute("UPDATE stage_stats SET processed = MAX(0, processed - ?), saved_bytes = MAX(0, saved_bytes - ?), updated_at = ? WHERE stage = 'compress'", (chat_compressed, chat_saved_bytes, time.time()))
-        if chat_total_bytes > 0:
-            await self.execute("UPDATE stage_stats SET processed = MAX(0, processed - ?), updated_at = ? WHERE stage = 'download'", (chat_uploaded + chat_compressed, time.time()))
-        await self.commit()
+        async with self._write_lock:
+            for table in ['queue_items', 'files', 'topics', 'chat_names', 'chat_stats', 'scan_progress', 'history', 'file_errors']:
+                await self.execute(f"DELETE FROM {table} WHERE chat_id = ?", (chat_id,))
+            if chat_uploaded > 0:
+                await self.execute("UPDATE stage_stats SET processed = MAX(0, processed - ?), success = MAX(0, success - ?), updated_at = ? WHERE stage = 'upload'", (chat_uploaded, chat_uploaded, time.time()))
+            if chat_compressed > 0 or chat_saved_bytes > 0:
+                await self.execute("UPDATE stage_stats SET processed = MAX(0, processed - ?), saved_bytes = MAX(0, saved_bytes - ?), updated_at = ? WHERE stage = 'compress'", (chat_compressed, chat_saved_bytes, time.time()))
+            if chat_total_bytes > 0:
+                await self.execute("UPDATE stage_stats SET processed = MAX(0, processed - ?), updated_at = ? WHERE stage = 'download'", (chat_uploaded + chat_compressed, time.time()))
+            await self.commit()
         cursor = await self.execute("SELECT COUNT(*) FROM chat_names")
         if (await cursor.fetchone())[0] == 0:
             await self.set_app_state('selected_snapshot', 0)
@@ -1018,10 +1024,11 @@ class DatabaseManager:
         await self.ensure_loaded()
         self._cache['chat_ids'] = []
         await self._save_key('chat_ids', [])
-        for table in ['chat_names', 'topics', 'files', 'chat_stats', 'scan_progress', 'history', 'file_errors', 'system_errors', 'stage_stats', 'queue_items', 'queue_processing', 'queue_retry', 'active_progress']:
-            await self.execute(f"DELETE FROM {table}")
-        await self.set_app_state('selected_snapshot', 0)
-        await self.commit()
+        async with self._write_lock:
+            for table in ['chat_names', 'topics', 'files', 'chat_stats', 'scan_progress', 'history', 'file_errors', 'system_errors', 'stage_stats', 'queue_items', 'queue_processing', 'queue_retry', 'active_progress']:
+                await self.execute(f"DELETE FROM {table}")
+            await self.set_app_state('selected_snapshot', 0)
+            await self.commit()
         logger.info("🗑️ Вся статистика сброшена")
         return True
     
@@ -1120,29 +1127,49 @@ class DatabaseManager:
         return result
     
     async def generate_bot_status(self) -> dict:
-        """Генерирует полный статус для бота."""
+        """Генерирует полный статус для бота (облегчённый)."""
         await self.ensure_loaded()
         all_stats: dict = await self.get_all_stats()
         chat_stats: dict = await self.get_chat_stats()
         stage_stats: dict = await self.get_stage_stats()
-        scan_progress: Dict[str, dict] = await self.get_scan_progress()
-        history: List[dict] = await self.get_history(30)
         file_errors_count: int
         system_errors_count: int
         file_errors_count, system_errors_count = await self.get_error_counts()
         pending: int = await self.count_pending()
         queue_counts: Dict[str, int] = await self.get_queue_counts()
+        pending_by_stage: Dict[str, int] = {
+            'check': queue_counts.get(STATUS_PENDING_CHECK, 0),
+            'download': queue_counts.get(STATUS_PENDING_DOWNLOAD, 0),
+            'compress': queue_counts.get(STATUS_PENDING_COMPRESS, 0),
+            'upload': queue_counts.get(STATUS_PENDING_UPLOAD, 0),
+        }
         active_items: List[dict] = await self.get_active_items()
+        now_ts = time.time()
+        # Проверить, жив ли main.py (PID-файл)
+        import os as _os
+        _pid_file = Path('backup.pid')
+        _main_alive = False
+        if _pid_file.exists():
+            try:
+                with open(_pid_file) as _f:
+                    _os.kill(int(_f.read().strip()), 0)
+                _main_alive = True
+            except (OSError, ValueError):
+                pass
+        paused = False
+        if _main_alive and active_items:
+            max_updated = 0.0
+            for item in active_items:
+                item_upd = item.get('qp_updated_at') or item.get('ap_updated_at') or item.get('updated_at') or 0
+                max_updated = max(max_updated, item_upd)
+            if max_updated > 0 and now_ts - max_updated > 300:
+                paused = True
         selected_snapshot: Any = await self.get_app_state('selected_snapshot', 0)
         chat_ids: List[int] = self._cache.get('chat_ids', [])
         windows: List[dict] = self._cache.get('windows', [])
         auto_enabled: bool = self._cache.get('auto_backup_enabled', False)
         chat_names: Dict[str, str] = {str(cid): await self.get_chat_name(cid) for cid in chat_ids}
         topics_status: Dict[str, List[dict]] = {str(cid): await self.get_chat_topics_status(cid) for cid in chat_ids}
-        all_topics: Dict[str, List[dict]] = {str(cid): await self.get_topics(cid) for cid in chat_ids}
-        queue_items: List[dict] = await self.get_queue_items(limit=100)
-        file_errors: List[dict] = await self.get_file_errors(50)
-        system_errors: List[dict] = await self.get_system_errors(50)
         active_files: List[dict] = []
         downloading: List[dict] = []
         compressing: List[dict] = []
@@ -1163,7 +1190,21 @@ class DatabaseManager:
             topics: List[dict] = topics_status.get(cid_str, [])
             stats: dict = chat_stats.get(cid_str, {})
             chat_summary[cid_str] = {'selected': sum(t['selected'] for t in topics), 'new': sum(t['new'] for t in topics), 'unloaded': sum(t['unloaded'] for t in topics if not t['is_fully_uploaded']), 'errors': sum(t['errors'] for t in topics), 'pending': sum(t['pending'] for t in topics), 'compressed': stats.get('compressed', 0), 'saved_bytes': stats.get('saved_bytes', 0)}
-        return {'running': False, 'start_time': await self.get_app_state('start_time', time.time()), 'summary': {'total_files': all_stats['total_files'], 'uploaded': all_stats['uploaded'], 'skipped': all_stats['skipped_files'], 'compressed': stage_stats.get('compress', {}).get('processed', 0), 'saved_bytes': stage_stats.get('compress', {}).get('saved_bytes', 0), 'file_errors': file_errors_count, 'system_errors': system_errors_count, 'new_files': all_stats['new_files'], 'unloaded_files': all_stats['unloaded_files'], 'error_files': all_stats['error_files'], 'uploaded_bytes': sum(s.get('uploaded_bytes', 0) for s in chat_stats.values()), 'pending': pending, 'queue_counts': queue_counts, 'selected_snapshot': selected_snapshot}, 'chat_stats': chat_stats, 'stage_stats': stage_stats, 'scan_progress': scan_progress, 'topics_status': topics_status, 'all_topics': all_topics, 'chat_names': chat_names, 'chat_ids': chat_ids, 'queue_items': queue_items, 'windows': windows, 'auto_enabled': auto_enabled, 'active_files': active_files, 'downloading': downloading, 'compressing': compressing, 'uploading': uploading, 'all_errors': [{'type': 'file', **dict(e)} for e in file_errors] + [{'type': 'system', **dict(e)} for e in system_errors], 'history': history, 'chat_summary': chat_summary, 'timestamp': time.time()}
+        compress_speed = 0.0
+        for item in active_items:
+            if item.get('worker_type') in ('compress_photo', 'compress_video'):
+                s = item.get('speed')
+                if s and s > 0:
+                    compress_speed = max(compress_speed, s)
+        
+        session_stats = await self.get_app_state('session_stats', {})
+        session_uploaded = session_stats.get('uploaded', 0)
+        session_downloaded = session_stats.get('downloaded', 0)
+        session_compressed = session_stats.get('compressed', 0)
+        session_checked = session_stats.get('checked', 0)
+        session_skipped = session_stats.get('skipped', 0)
+        
+        return {'running': False, 'paused': paused, 'start_time': await self.get_app_state('start_time', time.time()), 'summary': {'total_files': all_stats['total_files'], 'uploaded': session_uploaded, 'downloaded': session_downloaded, 'compressed': session_compressed, 'checked': session_checked, 'skipped': session_skipped, 'total_uploaded': all_stats['uploaded'], 'total_skipped': all_stats['skipped_files'], 'total_compressed': stage_stats.get('compress', {}).get('processed', 0), 'saved_bytes': stage_stats.get('compress', {}).get('saved_bytes', 0), 'file_errors': file_errors_count, 'system_errors': system_errors_count, 'new_files': all_stats['new_files'], 'unloaded_files': all_stats['unloaded_files'], 'error_files': all_stats['error_files'], 'uploaded_bytes': sum(s.get('uploaded_bytes', 0) for s in chat_stats.values()), 'pending': pending, 'pending_by_stage': pending_by_stage, 'queue_counts': queue_counts, 'selected_snapshot': selected_snapshot, 'compress_speed': compress_speed}, 'chat_stats': chat_stats, 'stage_stats': stage_stats, 'topics_status': topics_status, 'chat_names': chat_names, 'chat_ids': chat_ids, 'windows': windows, 'auto_enabled': auto_enabled, 'active_files': active_files, 'downloading': downloading, 'compressing': compressing, 'uploading': uploading, 'chat_summary': chat_summary, 'timestamp': time.time()}
     
     async def has_selected_with_pending(self, chat_ids: Optional[List[int]] = None) -> bool:
         """Проверяет, есть ли выбранные файлы для обработки."""

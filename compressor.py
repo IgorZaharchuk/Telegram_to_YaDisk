@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 Модуль сжатия медиафайлов - ПОЛНОСТЬЮ АВТОНОМНЫЙ
-ВЕРСИЯ 0.17.18 — ИСПРАВЛЕНИЯ: REGEX ДЛЯ FFMPEG, ДЕЛЕНИЕ НА НОЛЬ
+ВЕРСИЯ 0.18.0 — ТАЙМАУТ 10 МИН, СООБЩЕНИЕ ОБ ОШИБКЕ
 """
 
-__version__ = "0.17.18"
+__version__ = "0.18.0"
 
 import os
 import asyncio
@@ -387,7 +387,7 @@ class Compressor:
             success, compressed_size = await asyncio.wait_for(
                 loop.run_in_executor(pool, self._compress_photo_sync,
                                      file_path, temp_path, self.max_image_dimension, self.image_quality),
-                timeout=600)
+                timeout=900)
             
             if not success or not os.path.exists(temp_path):
                 raise Exception("Compression failed")
@@ -450,7 +450,7 @@ class Compressor:
                 success=False, original_path=file_path, compressed_path=file_path,
                 original_size=original_size, compressed_size=original_size,
                 saved_bytes=0, saved_percent=0, compression_type='none',
-                decision="Таймаут сжатия (5 минут)", duration_sec=time.time() - start,
+                decision="Таймаут сжатия (10 минут)", duration_sec=time.time() - start,
                 error="timeout", was_compressed=False, should_compress=True)
         except Exception as e:
             self.stats['failed'] += 1

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 Система очередей - ОДНОРАЗОВЫЕ ВОРКЕРЫ, АТОМАРНЫЙ ЗАХВАТ, ВАЛИДАЦИЯ
-ВЕРСИЯ 0.17.18 — ПОЛНЫЙ РЕФАКТОРИНГ
+ВЕРСИЯ 0.18.0 — SESSION_SKIPPED/COMPRESSED/ERRORS, КЭШ COUNTS, BATCH ЛИМИТ, ВЫВОД ЛОГА
 """
 
-__version__ = "0.17.18"
+__version__ = "0.18.0"
 
 import os
 import asyncio
@@ -500,6 +500,7 @@ class FileProcessor:
                     filename=item.filename, size=item.file_size, reason="already_uploaded",
                     topic_id=item.topic_id, chat_name=await self._get_chat_name(item.chat_id),
                     topic_name=await self._get_topic_name(item.chat_id, item.topic_id) if item.topic_id else None)
+                self.qs.session_skipped += 1
                 await self.qs._complete_item(item)
                 logger.info(f"⏭️ Пропущен (уже загружен): {item.filename}")
                 return False
@@ -514,6 +515,7 @@ class FileProcessor:
                     topic_id=item.topic_id, chat_name=chat_name, topic_name=topic_name
                 )
                 await self.db.update_file_state(item.chat_id, item.message_id, STATE_SKIPPED)
+                self.qs.session_skipped += 1
                 await self.qs._complete_item(item)
                 logger.info(f"⏭️ Пропущен (уже на диске): {item.filename}")
                 return False
@@ -528,6 +530,14 @@ class FileProcessor:
     async def download(self, item: QueueItem, worker_id: str) -> bool:
         """Скачивает файл из Telegram с валидацией после загрузки."""
         try:
+            # Проверяем — если файл уже на Яндекс.Диске, пропускаем
+            exists, size, _ = await self.ya.file_exists(item.remote_dir, item.filename)
+            if exists and size > 0:
+                logger.info(f"⏭️ Файл уже на диске, пропускаем скачивание: {item.filename}")
+                await self.db.update_file_state(item.chat_id, item.message_id, STATE_SKIPPED)
+                await self.qs._complete_item(item)
+                return True
+
             if item.message is None:
                 item.message = await self.tg.get_message_by_id(item.chat_id, item.message_id)
                 if item.message is None:
@@ -590,6 +600,14 @@ class FileProcessor:
         topic_name = None
 
         try:
+            # Проверяем — если файл уже на Яндекс.Диске, пропускаем
+            exists, size, _ = await self.ya.file_exists(item.remote_dir, item.filename)
+            if exists and size > 0:
+                logger.info(f"⏭️ Файл уже на диске, пропускаем сжатие: {item.filename}")
+                await self.db.update_file_state(item.chat_id, item.message_id, STATE_SKIPPED)
+                await self.qs._complete_item(item)
+                return True
+
             if not os.path.exists(item.local_path):
                 raise Exception(f"File not found: {item.local_path}")
 
@@ -630,6 +648,7 @@ class FileProcessor:
                         topic_id=item.topic_id, chat_name=chat_name, topic_name=topic_name
                     )
                 else:
+                    self.qs.session_compressed += 1
                     logger.info(
                         f"{'🎬' if is_video else '📸'} СЖАТО: {item.filename} "
                         f"{result.original_size/1024:.1f}KB → {result.compressed_size/1024:.1f}KB "
@@ -794,6 +813,9 @@ class QueueSystem:
         self._shutdown_manager: Optional[Any] = None
         self._retry_tasks: Set[asyncio.Task] = set()
         self._retry_tasks_lock = asyncio.Lock()
+        self.session_skipped = 0
+        self.session_errors = 0
+        self.session_compressed = 0
 
     def set_shutdown_manager(self, shutdown_manager: Any) -> None:
         """Устанавливает менеджер завершения."""
@@ -934,6 +956,7 @@ class QueueSystem:
                     (STATE_ERROR, item.chat_id, item.message_id)
                 )
                 await db_conn.commit()
+                self.session_errors += 1
                 logger.error(f"❌ {item.filename}: фатальная ошибка — {error[:200]}")
                 return
 
@@ -1174,6 +1197,7 @@ class QueueSystem:
         await self.db.clear_processing()
 
         self.running = True
+        await self.db.set_app_state("session_stats", {})
         queue_settings = await self.db.get_queue_settings()
 
         # Создаём 5 пулов с фабриками одноразовых воркеров
@@ -1247,7 +1271,7 @@ class QueueSystem:
         try:
             await asyncio.wait_for(
                 asyncio.gather(*stop_tasks, return_exceptions=True),
-                timeout=15.0
+                timeout=60.0
             )
         except asyncio.TimeoutError:
             logger.warning("⚠️ Не все воркеры остановились за 15 секунд")
@@ -1276,30 +1300,67 @@ class QueueSystem:
         import psutil
         psutil.cpu_percent(interval=None)
         last_checkpoint = time.time()
+        
+        # Кэш для снижения нагрузки на БД
+        _cached_counts = None
+        _cached_counts_time = 0.0
+        COUNTS_CACHE_TTL = 10.0
+        
         logger.info("📡 Монитор ресурсов запущен")
 
         while self.running:
             try:
                 await asyncio.sleep(2)
                 cpu = psutil.cpu_percent(interval=None)
-                try:
-                    counts = await self.db.get_queue_counts()
-                except Exception:
-                    await asyncio.sleep(1)
-                    continue
-                logger.debug(f"📡 Монитор: counts={counts}")
+                
+                now = time.time()
+                if _cached_counts is None or now - _cached_counts_time > COUNTS_CACHE_TTL:
+                    try:
+                        counts = await self.db.get_queue_counts()
+                        _cached_counts = counts
+                        _cached_counts_time = now
+                    except Exception as e:
+                        if 'locked' in str(e).lower():
+                            logger.debug(f"📡 БД занята, используем кэш мониторинга")
+                            counts = _cached_counts if _cached_counts is not None else {}
+                        else:
+                            logger.error(f"❌ Ошибка мониторинга: {e}")
+                            await asyncio.sleep(30)
+                            continue
+                else:
+                    counts = _cached_counts
+                
+                if counts:
+                    # Пропускаем адаптацию, если все очереди пусты
+                    total_pending = sum(counts.get(s, 0) for s in (
+                        STATUS_PENDING_CHECK, STATUS_PENDING_DOWNLOAD,
+                        STATUS_PENDING_COMPRESS, STATUS_PENDING_UPLOAD
+                    ))
+                    if total_pending == 0:
+                        await asyncio.sleep(MONITOR_INTERVAL - 2)
+                        continue
+                    
+                    logger.debug(f"📡 Монитор: counts={counts}")
 
-                for pool_name, pool in self.pools.items():
-                    queue_size = counts.get(self.POOL_STATUS_MAP.get(pool_name, ''), 0)
-                    # Для compress пулов делим очередь по типам
-                    if pool_name == 'compress_photo':
-                        queue_size = queue_size // 2
-                    elif pool_name == 'compress_video':
-                        queue_size = min(queue_size, 5)
+                    for pool_name, pool in self.pools.items():
+                        queue_size = counts.get(self.POOL_STATUS_MAP.get(pool_name, ''), 0)
+                        if pool_name == 'compress_photo':
+                            queue_size = queue_size // 2
+                        elif pool_name == 'compress_video':
+                            queue_size = min(queue_size, 5)
 
-                    logger.debug(f"📊 {pool_name}: queue={queue_size}, cpu={cpu:.0f}%, target={pool.target}")
-                    logger.debug(f"📡 ВЫЗОВ adjust для {pool_name}: q={queue_size}, cpu={cpu:.0f}")
-                    await pool.adjust(queue_size, cpu)
+                        logger.debug(f"📊 {pool_name}: queue={queue_size}, cpu={cpu:.0f}%, target={pool.target}")
+                        await pool.adjust(queue_size, cpu)
+
+                # Сохраняем сессионные счётчики для бота (~каждые 10 секунд)
+                await self.db.set_app_state('session_stats', {
+                    'checked': self.pools['check']._processed_count if 'check' in self.pools else 0,
+                    'downloaded': self.pools['download']._processed_count if 'download' in self.pools else 0,
+                    'compressed': self.session_compressed,
+                    'uploaded': self.pools['upload']._processed_count if 'upload' in self.pools else 0,
+                    'skipped': self.session_skipped,
+                    'errors': self.session_errors
+                })
 
                 if time.time() - last_checkpoint > CHECKPOINT_INTERVAL:
                     await self.db.checkpoint()
@@ -1518,6 +1579,8 @@ class QueueSystem:
         existing_keys = await self.db.are_files_in_queue(files_to_check)
 
         for key in files_to_check:
+            if added >= limit:
+                break
             if key in existing_keys:
                 continue
 
@@ -1630,10 +1693,10 @@ class QueueSystem:
             logger.info(f"✅ Сессия завершена")
         else:
             logger.info(f"🛑 Сессия прервана")
-        logger.info(f"   🔍 Проверено: {checked}")
         logger.info(f"   📥 Скачано: {downloaded}")
-        logger.info(f"   🗜️ Сжато: {compressed}")
+        logger.info(f"   🗜️ Сжато: {self.session_compressed}")
         logger.info(f"   📤 Загружено: {uploaded}")
+        logger.info(f"   ⏭️ Пропущено: {self.session_skipped}")
         return uploaded
 
     async def cleanup_all_downloads(self, force: bool = False) -> None:

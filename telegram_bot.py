@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 Telegram Bot для управления Backup
-ВЕРСИЯ 0.17.18 — ИСПРАВЛЕНИЯ: УВЕДОМЛЕНИЕ ПРИ ОТКЛЮЧЕНИИ WATCHER
+ВЕРСИЯ 0.18.0 — СЕССИОННЫЕ СЧЁТЧИКИ, РАЗДЕЛЕНИЕ МЕНЮ, AIOLIMITER, ФИКСЫ ОТОБРАЖЕНИЯ
 """
 
-__version__ = "0.17.18"
+__version__ = "0.18.0"
 
 import os
 import sys
@@ -32,6 +32,7 @@ from telegram.ext import (
     ContextTypes
 )
 
+from aiolimiter import AsyncLimiter
 from dotenv import load_dotenv
 
 from database import (
@@ -89,13 +90,21 @@ logging.getLogger("telegram.ext.Application").setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
 logger.info(f"📋 Разрешённые пользователи: {ALLOWED_USERS}")
 
+# =============================================================================
+# ЛИМИТЕРЫ API TELEGRAM (aiolimiter)
+# =============================================================================
+API_USER_RATE: int = 18
+API_WATCHER_RATE: int = 12
+_user_limiter = AsyncLimiter(max_rate=API_USER_RATE, time_period=60)
+_watcher_limiter = AsyncLimiter(max_rate=API_WATCHER_RATE, time_period=60)
+
 
 class C:
     """Константы бота."""
     ITEMS_PER_PAGE: int = 10
     MAX_MSG_LEN: int = 4000
     PROGRESS_BAR_WIDTH: int = 13
-    UPDATE_INTERVAL: float = 2.0
+    UPDATE_INTERVAL: float = 5.0
     LOG_LINES_PER_PAGE: int = 30
     MAX_ACTIVE_FILES_TOTAL: int = 10
     MAX_HISTORY_ITEMS: int = 10
@@ -107,7 +116,7 @@ STATUS_NAMES: Dict[str, str] = {'all': 'Все', 'uploaded': 'Скачано', '
 
 _bot_status_cache: Optional[dict] = None
 _bot_status_cache_time: float = 0
-BOT_STATUS_CACHE_TTL: float = 1.0
+BOT_STATUS_CACHE_TTL: float = 4.0
 
 
 async def get_cached_bot_status(db: DatabaseManager) -> dict:
@@ -122,7 +131,7 @@ async def get_cached_bot_status(db: DatabaseManager) -> dict:
 
 
 def invalidate_bot_status_cache() -> None:
-    """Инвалидирует кэш статуса бота."""
+    """Инвалидирует кэш статуса бота и сбрасывает таймер watcher."""
     global _bot_status_cache, _bot_status_cache_time
     _bot_status_cache = None
     _bot_status_cache_time = 0
@@ -142,19 +151,37 @@ def is_backup_running() -> bool:
         return False
 
 
+_cached_age: float = 0
+_cached_age_time: float = 0
+
 def get_heartbeat_age() -> float:
-    """Возвращает возраст последнего heartbeat."""
+    """Возвращает возраст последнего heartbeat (кэш 2 секунды)."""
+    global _cached_age, _cached_age_time
+    now = time.time()
+    if now - _cached_age_time < 2.0:
+        return _cached_age
+    _cached_age_time = now
     try:
         import sqlite3
         conn: sqlite3.Connection = sqlite3.connect("backup.db")
-        cursor: sqlite3.Cursor = conn.execute("SELECT MAX(updated_at) FROM queue_processing WHERE started_at > ?", (time.time() - 3600,))
+        # Смотрим и queue_processing, и active_progress — что новее
+        cursor: sqlite3.Cursor = conn.execute(
+            "SELECT MAX(updated_at) FROM ("
+            "  SELECT updated_at FROM queue_processing WHERE started_at > ? "
+            "  UNION ALL "
+            "  SELECT updated_at FROM active_progress WHERE updated_at > ?"
+            ")",
+            (time.time() - 3600, time.time() - 3600)
+        )
         row: Optional[tuple] = cursor.fetchone()
         conn.close()
         if row and row[0]:
             age: float = time.time() - row[0]
-            return min(age, 999)
+            _cached_age = min(age, 999)
+            return _cached_age
     except Exception:
         pass
+    _cached_age = 0
     return 0
 
 
@@ -271,11 +298,16 @@ _flood: FloodControl = FloodControl()
 
 
 async def _telegram_request(bot: Any, uid: int, action: str, text: str, msg_id: Optional[int],
-                            kb: Optional[InlineKeyboardMarkup], parse_mode: str, timeout: float) -> Optional[int]:
-    """Выполняет запрос к Telegram API с повторными попытками."""
+                            kb: Optional[InlineKeyboardMarkup], parse_mode: str, timeout: float,
+                            is_user_action: bool = False) -> Optional[int]:
+    """Выполняет запрос к Telegram API с контролем лимитов через aiolimiter."""
+    limiter = _user_limiter if is_user_action else _watcher_limiter
+    
     for attempt in range(3):
         try:
+            await limiter.acquire()
             await _flood.wait()
+            
             if action == 'send':
                 msg: Any = await asyncio.wait_for(
                     bot.send_message(chat_id=uid, text=text, reply_markup=kb, parse_mode=parse_mode),
@@ -287,6 +319,7 @@ async def _telegram_request(bot: Any, uid: int, action: str, text: str, msg_id: 
                                           reply_markup=kb, parse_mode=parse_mode),
                     timeout=timeout)
                 return msg_id
+                
         except asyncio.TimeoutError:
             if attempt < 2:
                 await asyncio.sleep(2 ** attempt)
@@ -300,7 +333,7 @@ async def _telegram_request(bot: Any, uid: int, action: str, text: str, msg_id: 
                 return msg_id if action == 'edit' else 0
             if action == 'edit' and "message to edit not found" in str(e):
                 await _bot_state.pop_msg(uid)
-                return await _telegram_request(bot, uid, 'send', text, None, kb, parse_mode, timeout)
+                return await _telegram_request(bot, uid, 'send', text, None, kb, parse_mode, timeout, is_user_action)
             logger.error(f"❌ BadRequest: {str(e)[:100]}")
             return 0
         except Exception as e:
@@ -312,26 +345,28 @@ async def _telegram_request(bot: Any, uid: int, action: str, text: str, msg_id: 
 
 
 async def safe_edit_or_send(bot: Any, uid: int, edit_id: Optional[int], text: str,
-                            kb: Optional[InlineKeyboardMarkup] = None, parse_mode: str = 'HTML') -> Optional[int]:
+                            kb: Optional[InlineKeyboardMarkup] = None, parse_mode: str = 'HTML',
+                            is_user_action: bool = False) -> Optional[int]:
     """Безопасно редактирует или отправляет новое сообщение."""
     if edit_id:
-        result: Optional[int] = await _telegram_request(bot, uid, 'edit', text, edit_id, kb, parse_mode, 10.0)
+        result: Optional[int] = await _telegram_request(bot, uid, 'edit', text, edit_id, kb, parse_mode, 10.0, is_user_action)
         if result:
             return result
-    result = await _telegram_request(bot, uid, 'send', text, None, kb, parse_mode, 10.0)
+    result = await _telegram_request(bot, uid, 'send', text, None, kb, parse_mode, 10.0, is_user_action)
     if result:
         await _bot_state.set_msg(uid, result)
     return result
 
 
-async def safe_edit(bot: Any, uid: int, msg_id: int, text: str, kb: Optional[InlineKeyboardMarkup] = None) -> bool:
+async def safe_edit(bot: Any, uid: int, msg_id: int, text: str, kb: Optional[InlineKeyboardMarkup] = None,
+                    is_user_action: bool = False) -> bool:
     """Безопасно редактирует сообщение."""
-    return await _telegram_request(bot, uid, 'edit', text, msg_id, kb, 'HTML', 10.0) is not None
+    return await _telegram_request(bot, uid, 'edit', text, msg_id, kb, 'HTML', 10.0, is_user_action) is not None
 
 
 async def send_temp_message(bot: Any, uid: int, text: str, delay: int = 3, kb: Optional[InlineKeyboardMarkup] = None) -> None:
     """Отправляет временное сообщение."""
-    msg_id: Optional[int] = await _telegram_request(bot, uid, 'send', text, None, kb, 'HTML', 10.0)
+    msg_id: Optional[int] = await _telegram_request(bot, uid, 'send', text, None, kb, 'HTML', 10.0, is_user_action=True)
     if msg_id:
         asyncio.create_task(_delete_later(bot, uid, msg_id, delay))
 
@@ -482,14 +517,24 @@ class Keyboard:
         start: int = page * per_page
         for f in files[start:start + per_page]:
             is_selected: bool = f['message_id'] in selected_ids
-            emoji: str = '☑️' if is_selected else '⬜'
             file_type: str = f.get('file_type', f.get('type', 'other'))
             type_emoji: str = C.FILE_EMOJI.get(file_type, '📎')
             state: int = f.get('state', STATE_UNLOADED)
-            status_emoji: str = '📥' if state == STATE_UPLOADED else ('🆕' if state == STATE_NEW else ('⏭️' if state == STATE_SKIPPED else ('❌' if state == STATE_ERROR else '⬜')))
+            if is_selected:
+                status_emoji = '☑️'
+            elif state == STATE_UPLOADED:
+                status_emoji = '✅'
+            elif state == STATE_NEW:
+                status_emoji = '🆕'
+            elif state == STATE_ERROR:
+                status_emoji = '❌'
+            elif state == STATE_SKIPPED:
+                status_emoji = '⏭️'
+            else:
+                status_emoji = '⬜'
             filename: str = f['filename'][:35] if 'filename' in f else 'unknown'
             size: int = f.get('size', f.get('file_size', 0))
-            btn_text: str = f"{emoji} {status_emoji} {type_emoji} {filename} ({fmt_size(size)})"
+            btn_text: str = f"{status_emoji} {type_emoji} {filename} ({fmt_size(size)})"
             kb.append([Keyboard._btn(btn_text, f"file_toggle:{chat_id}:{topic_id}:{f['message_id']}:{type_filter}:{status_filter}:{page}")])
         
         nav = []
@@ -536,16 +581,12 @@ def fmt_bar(p: Optional[float]) -> str:
 
 _animation_counter: int = 0
 _compress_speed_cache: Dict[str, Tuple[float, Optional[float]]] = {}
-_last_animation_time: float = 0
 
 
 def get_animated_header() -> str:
-    """Возвращает анимированный заголовок."""
-    global _animation_counter, _last_animation_time
-    now: float = time.time()
-    if now - _last_animation_time >= 2.0:
-        _animation_counter += 1
-        _last_animation_time = now
+    """Меняет иконку при каждом вызове (индикатор жизни сервера)."""
+    global _animation_counter
+    _animation_counter += 1
     return "🟢" if _animation_counter % 2 == 0 else "⚪"
 
 
@@ -629,7 +670,7 @@ def format_active_files(status: dict, context: str = 'main', max_items: Optional
             if context == 'main' and progress > 0 and show_progress:
                 lines.append(f"   {fmt_bar(progress)}")
             elif context == 'stats' and progress > 0:
-                lines[-1] = f"   {size_str} {progress:.0f}%"
+                lines[-1] += f" {progress:.0f}%"
                 
         elif op_type == 'compress':
             speed: float = item.get('speed', 0)
@@ -650,7 +691,7 @@ def format_active_files(status: dict, context: str = 'main', max_items: Optional
                     lines.append(info)
             elif context == 'stats':
                 if progress > 0:
-                    lines[-1] = f"   {size_str} {progress:.0f}%"
+                    lines[-1] += f" {progress:.0f}%"
                 if (speed or 0) > 0:
                     info = f"   x{speed:.1f}"
                     if eta:
@@ -662,7 +703,7 @@ def format_active_files(status: dict, context: str = 'main', max_items: Optional
             if context == 'main' and progress > 0 and show_progress:
                 lines.append(f"   {fmt_bar(progress)}")
             elif context == 'stats' and progress > 0:
-                lines[-1] = f"   {size_str} {progress:.0f}%"
+                lines[-1] += f" {progress:.0f}%"
     
     total_hidden: int = hidden_download + hidden_compress + hidden_upload
     if total_hidden > 0:
@@ -677,115 +718,165 @@ def format_active_files(status: dict, context: str = 'main', max_items: Optional
     return lines
 
 
-async def _format_menu(db: DatabaseManager, detailed: bool = False) -> str:
-    """Форматирует главное меню или статистику."""
+async def _format_main(db: DatabaseManager) -> str:
+    """Форматирует главное меню — только сессионные данные."""
     status: dict = await get_cached_bot_status(db)
     is_running: bool = is_backup_running()
-    age: float = get_heartbeat_age()
-    
-    if detailed:
-        lines: List[str] = [f"📊 ДЕТАЛЬНАЯ СТАТИСТИКА {get_animated_header()}\n"]
-    else:
-        lines = [
-            f"⚡ Telegram Backup {get_animated_header()} {age:.1f}с" if is_running else f"⚡ Telegram Backup {get_animated_header()}",
-            "🟢 Выполняется" if is_running else "⚪ Не активен",
-            ""
-        ]
-        active_lines: List[str] = format_active_files(status, 'main')
-        if active_lines:
-            lines.extend(active_lines)
-            lines.append("")
-    
+    age: float = get_heartbeat_age() if is_running else 0
+
+    age_str = f" {age:.1f}s" if is_running and age > 0 else ""
+    lines = [
+        f"⚡ Telegram Backup {get_animated_header()}{age_str}",
+        "⏸️ На паузе" if status.get('paused') else ("🟢 Активен" if is_running else "⚪ Не активен"),
+        ""
+    ]
+    active_lines: List[str] = format_active_files(status, 'main')
+    if active_lines:
+        lines.extend(active_lines)
+        lines.append("")
+
     summary: dict = status['summary']
-    
+
     lines.append(f"📄 Очередь: {summary.get('pending', 0)} / {summary.get('selected_snapshot', 0)}")
-    line: str = f"✅ Скачано: {summary.get('uploaded', 0)}"
+    line: str = f"📤 Загружено: {summary.get('uploaded', 0)}"
     if summary.get('skipped', 0) > 0:
-        line += f" ⏭️ Пропущено: {summary.get('skipped', 0)}"
+        line += f"  ⏭️ Было: {summary.get('skipped', 0)}"
     lines.append(line)
-    
+
     file_errors: int = summary.get('file_errors') or 0
     system_errors: int = summary.get('system_errors') or 0
     if file_errors > 0 or system_errors > 0:
         lines.append(f"❌ Ошибок: 📄{file_errors} / ⚙️{system_errors}")
-    
-    total_bytes: int = sum(s.get('total_bytes', 0) for s in status.get('chat_stats', {}).values())
-    uploaded_bytes: int = summary.get('uploaded_bytes', 0)
-    lines.append(f"💾 {fmt_size(uploaded_bytes)} / {fmt_size(total_bytes)}")
-    
-    if detailed:
-        active_lines = format_active_files(status, 'stats')
-        if active_lines:
-            lines.append("\n⚡ АКТИВНЫЕ ФАЙЛЫ")
-            lines.extend(active_lines)
-        
-        history: List[dict] = status.get('history', [])
-        if history:
-            lines.append("\n📋 ПОСЛЕДНИЕ ОПЕРАЦИИ")
-            grouped: Dict[str, Dict[str, List[dict]]] = {}
-            icons: Dict[str, str] = {'uploaded': '✅', 'downloaded': '📥', 'compressed': '🗜️', 'skipped': '⏭️', 'queued': '⏳', 'error': '❌'}
-            
-            for entry in history:
-                chat: str = entry.get('chat_name', 'Неизвестный чат')
-                topic: str = entry.get('topic_name', 'Общая тема')
-                grouped.setdefault(chat, {}).setdefault(topic, []).append(entry)
-            
-            shown: int = 0
-            for chat, topics in grouped.items():
-                if shown >= C.MAX_HISTORY_ITEMS:
-                    break
-                lines.append(f"📁 {chat}")
-                shown += 1
-                for topic, entries in topics.items():
-                    if shown >= C.MAX_HISTORY_ITEMS:
-                        break
-                    if topic != "Общая тема":
-                        lines.append(f"   📂 {topic}")
-                        shown += 1
-                    take: int = min(len(entries), max(1, (C.MAX_HISTORY_ITEMS - shown) // max(1, len(topics))))
-                    for entry in entries[:take]:
-                        if shown >= C.MAX_HISTORY_ITEMS:
-                            break
-                        icon: str = icons.get(entry.get('status', ''), '📎')
-                        filename: str = entry.get('filename', 'unknown')[:35]
-                        size: int = entry.get('size', 0)
-                        compressed: int = entry.get('compressed_size', 0)
-                        if entry.get('status') == 'compressed' and compressed > 0:
-                            size_str = f" {fmt_size(size)} → {fmt_size(compressed)}"
-                        elif size > 0:
-                            size_str = f" ({fmt_size(size)})"
-                        else:
-                            size_str = ""
-                        lines.append(f"      {icon} {filename}{size_str}")
-                        shown += 1
-                    if len(entries) > take and shown < C.MAX_HISTORY_ITEMS:
-                        lines.append(f"      ... и ещё {len(entries) - take}")
-                        shown += 1
-                if shown < C.MAX_HISTORY_ITEMS:
-                    lines.append("")
-                    shown += 1
-    
+
+    pending_by_stage = summary.get('pending_by_stage', {})
+    if pending_by_stage:
+        parts = []
+        if pending_by_stage.get('check'):
+            parts.append(f"🔍{pending_by_stage['check']}")
+        if pending_by_stage.get('download'):
+            parts.append(f"📥{pending_by_stage['download']}")
+        if pending_by_stage.get('compress'):
+            parts.append(f"🗜️{pending_by_stage['compress']}")
+        if pending_by_stage.get('upload'):
+            parts.append(f"📤{pending_by_stage['upload']}")
+        if parts:
+            lines.append(f"⏳ {' '.join(parts)}")
+
     return "\n".join(lines)[:C.MAX_MSG_LEN]
 
 
+async def _format_stats(db: DatabaseManager) -> str:
+    """Форматирует детальную статистику — общие данные за всё время."""
+    status: dict = await get_cached_bot_status(db)
+    summary: dict = status['summary']
+
+    lines: List[str] = [f"📊 ДЕТАЛЬНАЯ СТАТИСТИКА {get_animated_header()}\n"]
+
+    lines.append(f"📄 Очередь: {summary.get('pending', 0)} / {summary.get('selected_snapshot', 0)}")
+    line: str = f"✅ Всего: {summary.get('total_uploaded', 0)}"
+    if summary.get('total_skipped', 0) > 0:
+        line += f"  ⏭️ Было: {summary.get('total_skipped', 0)}"
+    lines.append(line)
+
+    total_bytes: int = sum(s.get('total_bytes', 0) for s in status.get('chat_stats', {}).values())
+    uploaded_bytes: int = summary.get('uploaded_bytes', 0)
+    lines.append(f"💾 {fmt_size(uploaded_bytes)} / {fmt_size(total_bytes)}")
+
+    total_compressed = summary.get('total_compressed', 0)
+    saved_bytes = summary.get('saved_bytes', 0)
+    if total_compressed > 0:
+        lines.append(f"🗜️ Сжато: {total_compressed} / -{fmt_size(saved_bytes)}")
+
+    pending_by_stage = summary.get('pending_by_stage', {})
+    if pending_by_stage:
+        parts = []
+        if pending_by_stage.get('check'):
+            parts.append(f"🔍{pending_by_stage['check']}")
+        if pending_by_stage.get('download'):
+            parts.append(f"📥{pending_by_stage['download']}")
+        if pending_by_stage.get('compress'):
+            parts.append(f"🗜️{pending_by_stage['compress']}")
+        if pending_by_stage.get('upload'):
+            parts.append(f"📤{pending_by_stage['upload']}")
+        if parts:
+            lines.append(f"⏳ {' '.join(parts)}")
+
+    active_lines = format_active_files(status, 'stats')
+    if active_lines:
+        lines.append("\n⚡ АКТИВНЫЕ ФАЙЛЫ")
+        lines.extend(active_lines)
+
+    history: List[dict] = await db.get_history(30)
+    if history:
+        lines.append("\n📋 ПОСЛЕДНИЕ ОПЕРАЦИИ")
+        grouped: Dict[str, Dict[str, List[dict]]] = {}
+        icons: Dict[str, str] = {'uploaded': '✅', 'downloaded': '📥', 'compressed': '🗜️', 'skipped': '⏭️', 'queued': '⏳', 'error': '❌'}
+
+        for entry in history:
+            chat: str = entry.get('chat_name', 'Неизвестный чат')
+            topic: str = entry.get('topic_name', 'Общая тема')
+            grouped.setdefault(chat, {}).setdefault(topic, []).append(entry)
+
+        shown: int = 0
+        for chat, topics in grouped.items():
+            if shown >= C.MAX_HISTORY_ITEMS:
+                break
+            lines.append(f"📁 {chat}")
+            shown += 1
+            for topic, entries in topics.items():
+                if shown >= C.MAX_HISTORY_ITEMS:
+                    break
+                if topic != "Общая тема":
+                    lines.append(f"   📂 {topic}")
+                    shown += 1
+                take: int = min(len(entries), max(1, (C.MAX_HISTORY_ITEMS - shown) // max(1, len(topics))))
+                for entry in entries[:take]:
+                    if shown >= C.MAX_HISTORY_ITEMS:
+                        break
+                    icon: str = icons.get(entry.get('status', ''), '📎')
+                    filename: str = entry.get('filename', 'unknown')[:35]
+                    size: int = entry.get('size', 0)
+                    compressed: int = entry.get('compressed_size', 0)
+                    if entry.get('status') == 'compressed' and compressed > 0:
+                        size_str = f" {fmt_size(size)} → {fmt_size(compressed)}"
+                    elif size > 0:
+                        size_str = f" ({fmt_size(size)})"
+                    else:
+                        size_str = ""
+                    lines.append(f"      {icon} {filename}{size_str}")
+                    shown += 1
+                if len(entries) > take and shown < C.MAX_HISTORY_ITEMS:
+                    lines.append(f"      ... и ещё {len(entries) - take}")
+                    shown += 1
+            if shown < C.MAX_HISTORY_ITEMS:
+                lines.append("")
+                shown += 1
+
+    return "\n".join(lines)[:C.MAX_MSG_LEN]
 async def format_main_menu(db: DatabaseManager) -> str:
     """Форматирует главное меню."""
-    return await _format_menu(db, detailed=False)
+    return await _format_main(db)
 
 
 async def format_stats_menu(db: DatabaseManager) -> str:
     """Форматирует меню статистики."""
-    return await _format_menu(db, detailed=True)
+    return await _format_stats(db)
 
 
 async def watch_menu(uid: int, bot: Any, menu_name: str, format_func: Callable, kb_func: Callable) -> None:
     """Наблюдает за меню и обновляет при изменениях."""
     last_hash: Optional[str] = None
     errors: int = 0
+    first_update: bool = True
     try:
         while True:
-            await asyncio.sleep(C.UPDATE_INTERVAL)
-            if await _bot_state.get_menu(uid) != menu_name:
+            if first_update:
+                await asyncio.sleep(1.0)
+                first_update = False
+            else:
+                await asyncio.sleep(C.UPDATE_INTERVAL)
+            current_menu = await _bot_state.get_menu(uid)
+            if current_menu != menu_name or current_menu == '':
                 break
             if errors >= 5:
                 logger.warning(f"⚠️ Watcher для {uid} остановлен после {errors} ошибок")
@@ -803,7 +894,7 @@ async def watch_menu(uid: int, bot: Any, menu_name: str, format_func: Callable, 
                         kb: InlineKeyboardMarkup = kb_func()
                         await _bot_state.set_editing(uid, True)
                         try:
-                            await safe_edit(bot, uid, msg_id, text, kb)
+                            await safe_edit(bot, uid, msg_id, text, kb, is_user_action=False)
                             errors = 0
                         finally:
                             await _bot_state.set_editing(uid, False)
@@ -842,7 +933,7 @@ async def monitor_scan_progress(uid: int, bot: Any, msg_id: int, chat_id: Option
             await asyncio.sleep(1)
             
             if time.time() - start_time > timeout:
-                await safe_edit(bot, uid, msg_id, f"✅ <b>Сканирование {title} завершено</b> (по таймауту)")
+                await safe_edit(bot, uid, msg_id, f"✅ <b>Сканирование {title} завершено</b> (по таймауту)", is_user_action=False)
                 if is_full_scan:
                     await renderer.render('chats', msg_id)
                 else:
@@ -862,7 +953,7 @@ async def monitor_scan_progress(uid: int, bot: Any, msg_id: int, chat_id: Option
             
             if completed:
                 await asyncio.sleep(1)
-                await safe_edit(bot, uid, msg_id, f"✅ <b>Сканирование {title} завершено!</b>\n\nСписок файлов обновлён.")
+                await safe_edit(bot, uid, msg_id, f"✅ <b>Сканирование {title} завершено!</b>\n\nСписок файлов обновлён.", is_user_action=False)
                 await asyncio.sleep(2)
                 if is_full_scan:
                     await renderer.render('chats', msg_id)
@@ -872,7 +963,7 @@ async def monitor_scan_progress(uid: int, bot: Any, msg_id: int, chat_id: Option
             
             if scan_was_active and not has_data:
                 await asyncio.sleep(1)
-                await safe_edit(bot, uid, msg_id, f"✅ <b>Сканирование {title} завершено!</b>\n\nСписок файлов обновлён.")
+                await safe_edit(bot, uid, msg_id, f"✅ <b>Сканирование {title} завершено!</b>\n\nСписок файлов обновлён.", is_user_action=False)
                 await asyncio.sleep(2)
                 if is_full_scan:
                     await renderer.render('chats', msg_id)
@@ -882,7 +973,7 @@ async def monitor_scan_progress(uid: int, bot: Any, msg_id: int, chat_id: Option
             
             if not has_data:
                 if time.time() - last_data_time > no_data_timeout:
-                    await safe_edit(bot, uid, msg_id, f"✅ <b>Сканирование {title} завершено</b> (таймаут ожидания данных)")
+                    await safe_edit(bot, uid, msg_id, f"✅ <b>Сканирование {title} завершено</b> (таймаут ожидания данных)", is_user_action=False)
                     if is_full_scan:
                         await renderer.render('chats', msg_id)
                     else:
@@ -931,7 +1022,7 @@ async def monitor_scan_progress(uid: int, bot: Any, msg_id: int, chat_id: Option
                     if current_topic:
                         text += f"\n📂 Тема: {current_topic[:40]}"
                 
-                await safe_edit(bot, uid, msg_id, text)
+                await safe_edit(bot, uid, msg_id, text, is_user_action=False)
                 
     except asyncio.CancelledError:
         pass
@@ -957,6 +1048,7 @@ class MenuRenderer:
             except asyncio.CancelledError:
                 pass
             self._watcher_task = None
+        await _bot_state.set_menu(self.uid, '')
     
     async def render(self, menu_type: str, edit_id: Optional[int] = None, **kwargs) -> Optional[int]:
         """Рендерит меню указанного типа."""
@@ -983,7 +1075,7 @@ class MenuRenderer:
             return None
         
         text, kb = await handler(**kwargs)
-        msg_id: Optional[int] = await safe_edit_or_send(self.bot, self.uid, edit_id, text, kb)
+        msg_id: Optional[int] = await safe_edit_or_send(self.bot, self.uid, edit_id, text, kb, is_user_action=True)
         
         if msg_id and menu_type in ('main', 'stats'):
             db: DatabaseManager = await get_db()
@@ -991,6 +1083,7 @@ class MenuRenderer:
             kb_func: Callable = lambda: Keyboard.main(is_backup_running()) if menu_type == 'main' else Keyboard.stats()
             self._watcher_task = asyncio.create_task(watch_menu(self.uid, self.bot, menu_type, 
                                                                 lambda: format_func(db), kb_func))
+        
         return msg_id
     
     async def _render_main(self, **kwargs) -> Tuple[str, InlineKeyboardMarkup]:
@@ -1007,7 +1100,7 @@ class MenuRenderer:
         """Рендерит меню очереди."""
         db: DatabaseManager = await get_db()
         status: dict = await get_cached_bot_status(db)
-        items: List[dict] = status.get('queue_items', [])
+        items: List[dict] = await db.get_queue_items(limit=100)
         chat_names: Dict[str, str] = status.get('chat_names', {})
         
         if not items:
@@ -1019,7 +1112,9 @@ class MenuRenderer:
             chat: str = chat_names.get(str(item['chat_id']), f"Chat {item['chat_id']}")
             topic: str = "Общая тема"
             if item.get('topic_id'):
-                topic = f"Тема {item['topic_id']}"
+                tid = item['topic_id']
+                topic_name = await db.get_topic_name(item['chat_id'], tid)
+                topic = topic_name or f"Тема {tid}"
             grouped.setdefault(chat, {}).setdefault(topic, []).append(item)
         
         lines: List[str] = ["📋 ОЧЕРЕДЬ ФАЙЛОВ"]
@@ -1056,8 +1151,9 @@ class MenuRenderer:
     async def _render_errors(self, **kwargs) -> Tuple[str, InlineKeyboardMarkup]:
         """Рендерит меню ошибок."""
         db: DatabaseManager = await get_db()
-        status: dict = await get_cached_bot_status(db)
-        all_errors: List[dict] = status.get('all_errors', [])
+        file_errs: List[dict] = await db.get_file_errors(50)
+        sys_errs: List[dict] = await db.get_system_errors(50)
+        all_errors: List[dict] = [{'type': 'file', **dict(e)} for e in file_errs] + [{'type': 'system', **dict(e)} for e in sys_errs]
         
         file_errs: List[dict] = [e for e in all_errors if e.get('type') == 'file']
         sys_errs: List[dict] = [e for e in all_errors if e.get('type') == 'system']
@@ -1163,7 +1259,7 @@ class MenuRenderer:
             selected: int = summary.get('selected', 0)
             new_count: int = summary.get('new', 0)
             unloaded: int = summary.get('unloaded', 0)
-            compressed: int = summary.get('compressed', 0)
+            compressed: int = summary.get('total_compressed', 0)
             saved_bytes: int = summary.get('saved_bytes', 0)
             
             line: str = f"\n📁 <b>{name}</b>\n📤 {uploaded}/{total}"
@@ -1184,7 +1280,8 @@ class MenuRenderer:
         
         kb = [[Keyboard._btn(f"📁 {chat_names.get(str(cid), f'Chat {cid}')}", f"chat_manage:{cid}")] 
               for cid in chat_ids]
-        kb.append([Keyboard._btn("🔄 Обновить кэш", "refresh_all_cache")])
+        if not is_backup_running():
+            kb.append([Keyboard._btn("🔄 Обновить кэш", "refresh_all_cache")])
         kb.append([Keyboard._btn("➕ Добавить чат", "add_chat")])
         kb.append([Keyboard._btn("◀️ Назад", "settings")])
         return "\n".join(lines), InlineKeyboardMarkup(kb)
@@ -1213,18 +1310,18 @@ class MenuRenderer:
         new_count: int = summary.get('new', 0)
         unloaded: int = summary.get('unloaded', 0)
         total_pending: int = summary.get('pending', 0)
-        compressed: int = summary.get('compressed', 0)
+        compressed: int = summary.get('total_compressed', 0)
         saved_bytes: int = summary.get('saved_bytes', 0)
         
         text: str = f"📁 <b>{name}</b>\n\n"
-        text += f"✅ Загружено: {uploaded} из {total}\n"
+        text += f"✅ Готово: {uploaded} из {total}\n"
         if total_pending > 0:
             text += f"⏳ Осталось загрузить: {total_pending}\n"
         text += f"💾 Загружено: {fmt_size(uploaded_bytes)} из {fmt_size(total_bytes)}\n"
         if skipped > 0:
             text += f"⏭️ Пропущено: {skipped}\n"
         if compressed > 0:
-            text += f"🗜️ Сжато: {compressed} файлов, экономия {fmt_size(saved_bytes)}\n"
+            text += f"🗜️ Сжато: {compressed} | 💾-{fmt_size(saved_bytes)}\n"
         if selected > 0:
             text += f"☑️ Выбрано для загрузки: {selected}\n"
         if new_count > 0:
@@ -1235,12 +1332,14 @@ class MenuRenderer:
             text += f"❌ Ошибок: {errors}\n"
         
         kb: List[List[InlineKeyboardButton]] = []
-        if total_pending > 0:
+        if total > 0:
             kb.append([Keyboard._btn("📁 Управление файлами", f"files_topics:{chat_id}")])
         if errors > 0:
             kb.append([Keyboard._btn("❌ Сбросить ошибки", f"reset_errors:{chat_id}")])
-        kb.append([Keyboard._btn("🔄 Обновить кэш", f"refresh_cache:{chat_id}")])
-        kb.append([Keyboard._btn("❌ Удалить чат", f"remove_chat:{chat_id}")])
+        if not is_backup_running():
+            kb.append([Keyboard._btn("🔄 Обновить кэш", f"refresh_cache:{chat_id}")])
+        if not is_backup_running():
+            kb.append([Keyboard._btn("❌ Удалить чат", f"remove_chat:{chat_id}")])
         kb.append([Keyboard._btn("◀️ Назад", "chats")])
         return text.rstrip(), InlineKeyboardMarkup(kb)
     
@@ -1255,8 +1354,11 @@ class MenuRenderer:
         topics_list: List[dict] = topics_status.get(str(chat_id), [])
         
         if not topics_list:
-            kb: InlineKeyboardMarkup = InlineKeyboardMarkup([[Keyboard._btn("🔄 Обновить кэш", f"refresh_cache:{chat_id}"),
-                                        Keyboard._btn("◀️ Назад", f"chat_manage:{chat_id}")]])
+            if is_backup_running():
+                kb: InlineKeyboardMarkup = InlineKeyboardMarkup([[Keyboard._btn("◀️ Назад", f"chat_manage:{chat_id}")]])
+            else:
+                kb: InlineKeyboardMarkup = InlineKeyboardMarkup([[Keyboard._btn("🔄 Обновить кэш", f"refresh_cache:{chat_id}"),
+                                                Keyboard._btn("◀️ Назад", f"chat_manage:{chat_id}")]])
             return f"📁 {name}\n\n✅ Нет тем с нескачанными файлами", kb
         
         total_selected: int = sum(t['selected'] for t in topics_list)
@@ -1292,10 +1394,9 @@ class MenuRenderer:
         db: DatabaseManager = await get_db()
         status: dict = await get_cached_bot_status(db)
         chat_names: Dict[str, str] = status.get('chat_names', {})
-        all_topics: Dict[str, List[dict]] = status.get('all_topics', {})
         
         name: str = chat_names.get(str(chat_id), f"Chat {chat_id}")
-        topics: List[dict] = all_topics.get(str(chat_id), [])
+        topics: List[dict] = await db.get_topics(chat_id)
         
         tid: int = int(topic_id) if topic_id != "0" else 0
         topic_name: str = "Общая тема"
@@ -1344,12 +1445,12 @@ class MenuRenderer:
         unloaded_count: int = sum(1 for f in files if f['state'] == STATE_UNLOADED)
         error_count: int = sum(1 for f in files if f['state'] == STATE_ERROR)
         
-        selected_ids: Set[int] = {f['message_id'] for f in files} if is_selected else {f['message_id'] for f in files if f['state'] == STATE_SELECTED}
+        selected_ids: Set[int] = {f['message_id'] for f in files if f['state'] == STATE_SELECTED}
         total_pages: int = (len(filtered) + C.ITEMS_PER_PAGE - 1) // C.ITEMS_PER_PAGE
         
         lines: List[str] = [
             f"📁 {name}", f"📂 {topic_name}",
-            f"📊 Всего: {len(files)} | ✅ Скачано: {uploaded_count}",
+            f"📊 Всего: {len(files)} | ✅ Всего: {uploaded_count}",
             f"⬜ Не скачано: {unloaded_count} | 🆕 Новых: {new_count}",
         ]
         if error_count > 0:
@@ -1396,7 +1497,7 @@ async def show_logs(uid: int, bot: Any, page: int = 1, edit_id: Optional[int] = 
     """Показывает логи."""
     renderer: MenuRenderer = MenuRenderer(bot, uid)
     text, kb = await renderer._render_logs(page=page)
-    msg_id: Optional[int] = await safe_edit_or_send(bot, uid, edit_id, text, kb, parse_mode='Markdown')
+    msg_id: Optional[int] = await safe_edit_or_send(bot, uid, edit_id, text, kb, parse_mode='Markdown', is_user_action=True)
     if msg_id:
         await _bot_state.set_menu(uid, 'logs')
 
@@ -1498,7 +1599,7 @@ async def handle_force_kill(uid: int, bot: Any, edit_id: Optional[int] = None, c
         [Keyboard._btn("✅ ДА, ЗАВЕРШИТЬ", "force_kill_confirm")],
         [Keyboard._btn("❌ НЕТ, НАЗАД", "admin")]
     ])
-    await safe_edit_or_send(bot, uid, edit_id, "⚠️ ПРИНУДИТЕЛЬНОЕ ЗАВЕРШЕНИЕ\n\nЭто может привести к потере данных!\nПродолжить?", kb)
+    await safe_edit_or_send(bot, uid, edit_id, "⚠️ ПРИНУДИТЕЛЬНОЕ ЗАВЕРШЕНИЕ\n\nЭто может привести к потере данных!\nПродолжить?", kb, is_user_action=True)
 
 
 async def handle_force_kill_confirm(uid: int, bot: Any, edit_id: Optional[int] = None, callback: Optional[Any] = None) -> None:
@@ -1543,7 +1644,7 @@ async def handle_clear_queue(uid: int, bot: Any, edit_id: Optional[int] = None, 
     db: DatabaseManager = await get_db()
     await db.clear_queue()
     invalidate_bot_status_cache()
-    await safe_edit_or_send(bot, uid, edit_id, "✅ Очередь очищена", Keyboard.back("admin"))
+    await safe_edit_or_send(bot, uid, edit_id, "✅ Очередь очищена", Keyboard.back("admin"), is_user_action=True)
 
 
 async def handle_cleanup_temp(uid: int, bot: Any, edit_id: Optional[int] = None, callback: Optional[Any] = None) -> None:
@@ -1559,7 +1660,7 @@ async def handle_cleanup_temp(uid: int, bot: Any, edit_id: Optional[int] = None,
                     deleted += 1
                 except Exception:
                     pass
-    await safe_edit_or_send(bot, uid, edit_id, f"🧹 Удалено {deleted} временных файлов", Keyboard.back("admin"))
+    await safe_edit_or_send(bot, uid, edit_id, f"🧹 Удалено {deleted} временных файлов", Keyboard.back("admin"), is_user_action=True)
 
 
 async def handle_errors_clear(uid: int, bot: Any, edit_id: Optional[int] = None, callback: Optional[Any] = None) -> None:
@@ -1576,7 +1677,7 @@ async def handle_refresh_cache(uid: int, bot: Any, chat_id: int, edit_id: Option
     db: DatabaseManager = await get_db()
     status: dict = await get_cached_bot_status(db)
     name: str = status.get('chat_names', {}).get(str(chat_id), f"Chat {chat_id}")
-    msg_id: Optional[int] = await safe_edit_or_send(bot, uid, edit_id, f"🔄 <b>Начинаю полное сканирование чата {name}...</b>\n\n⏳ Подготовка...", Keyboard.back(f"chat_manage:{chat_id}"))
+    msg_id: Optional[int] = await safe_edit_or_send(bot, uid, edit_id, f"🔄 <b>Начинаю полное сканирование чата {name}...</b>\n\n⏳ Подготовка...", Keyboard.back(f"chat_manage:{chat_id}"), is_user_action=True)
     if msg_id:
         await _bot_state.set_watcher_task(f"scan_{uid}_{chat_id}", asyncio.create_task(monitor_scan_progress(uid, bot, msg_id, chat_id, name)))
     subprocess.Popen([sys.executable, "main.py", "--scan-only", "--full-scan", f"--chat-id={chat_id}"],
@@ -1585,7 +1686,7 @@ async def handle_refresh_cache(uid: int, bot: Any, chat_id: int, edit_id: Option
 
 async def handle_refresh_all_cache(uid: int, bot: Any, edit_id: Optional[int] = None, callback: Optional[Any] = None) -> None:
     """Обновляет кэш всех чатов."""
-    msg_id: Optional[int] = await safe_edit_or_send(bot, uid, edit_id, "🔄 <b>Начинаю полное сканирование всех чатов...</b>\n\n⏳ Подготовка...", Keyboard.back("chats"))
+    msg_id: Optional[int] = await safe_edit_or_send(bot, uid, edit_id, "🔄 <b>Начинаю полное сканирование всех чатов...</b>\n\n⏳ Подготовка...", Keyboard.back("chats"), is_user_action=True)
     if msg_id:
         await _bot_state.set_watcher_task(f"full_scan_{uid}", asyncio.create_task(monitor_scan_progress(uid, bot, msg_id, chat_id=None)))
     subprocess.Popen([sys.executable, "main.py", "--scan-only", "--full-scan"],
@@ -1594,6 +1695,9 @@ async def handle_refresh_all_cache(uid: int, bot: Any, edit_id: Optional[int] = 
 
 async def handle_remove_chat(uid: int, bot: Any, chat_id: int, edit_id: Optional[int] = None, callback: Optional[Any] = None) -> None:
     """Удаляет чат."""
+    if is_backup_running():
+        await send_temp_message(bot, uid, "⚠️ Сначала остановите backup")
+        return
     db: DatabaseManager = await get_db()
     await db.delete_chat_completely(chat_id)
     invalidate_bot_status_cache()
@@ -1624,7 +1728,7 @@ async def handle_reset_all_stats(uid: int, bot: Any, edit_id: Optional[int] = No
         [Keyboard._btn("❌ НЕТ, НАЗАД", "admin")]
     ])
     await safe_edit_or_send(bot, uid, edit_id, 
-        "⚠️ СБРОС ВСЕЙ СТАТИСТИКИ\n\nБудут удалены:\n• Все чаты из списка\n• Вся история операций\n• Статистика сжатия и загрузки\n• Кэш файлов\n\nПродолжить?", kb)
+        "⚠️ СБРОС ВСЕЙ СТАТИСТИКИ\n\nБудут удалены:\n• Все чаты из списка\n• Вся история операций\n• Статистика сжатия и загрузки\n• Кэш файлов\n\nПродолжить?", kb, is_user_action=True)
 
 
 async def handle_reset_all_stats_confirm(uid: int, bot: Any, edit_id: Optional[int] = None, callback: Optional[Any] = None) -> None:
@@ -1681,18 +1785,28 @@ async def handle_topic_menu(uid: int, bot: Any, chat_id: int, topic_id: str, edi
     db: DatabaseManager = await get_db()
     status: dict = await get_cached_bot_status(db)
     chat_names: Dict[str, str] = status.get('chat_names', {})
-    all_topics: Dict[str, List[dict]] = status.get('all_topics', {})
+    topics_status: Dict[str, List[dict]] = status.get('topics_status', {})
     
     name: str = chat_names.get(str(chat_id), f"Chat {chat_id}")
-    topics: List[dict] = all_topics.get(str(chat_id), [])
+    topics_list: List[dict] = topics_status.get(str(chat_id), [])
     
-    topic_name: str = "Общая тема"
+    topic_name: str = "Тема"
     is_selected: bool = False
-    for t in topics:
-        if str(t['topic_id']) == topic_id:
+    tid_int: int = int(topic_id)
+    
+    for t in topics_list:
+        if t['topic_id'] == tid_int:
             topic_name = t['topic_name']
             is_selected = t['is_selected']
             break
+    
+    if topic_name == "Тема":
+        topics_from_db = await db.get_topics(chat_id)
+        for t in topics_from_db:
+            if t['topic_id'] == tid_int:
+                topic_name = t['topic_name']
+                is_selected = t['is_selected']
+                break
     
     kb: InlineKeyboardMarkup = InlineKeyboardMarkup([
         [Keyboard._btn("📂 Открыть файлы", f"files:{chat_id}:{topic_id}")],
@@ -1702,7 +1816,7 @@ async def handle_topic_menu(uid: int, bot: Any, chat_id: int, topic_id: str, edi
                        f"topic_select_none:{chat_id}:{topic_id}" if is_selected else "noop")],
         [Keyboard._btn("◀️ Назад", f"files_topics:{chat_id}")]
     ])
-    await safe_edit_or_send(bot, uid, edit_id, f"📁 {name} / {topic_name}\n\nВыберите действие:", kb)
+    await safe_edit_or_send(bot, uid, edit_id, f"📁 {name} / {topic_name}\n\nВыберите действие:", kb, is_user_action=True)
 
 
 async def handle_files_select(uid: int, bot: Any, chat_id: int, topic_id: str, select_type: str,
@@ -1716,7 +1830,11 @@ async def handle_files_select(uid: int, bot: Any, chat_id: int, topic_id: str, s
     sort_order: str = state.get('sort_order', 'desc')
     
     if select_type == 'all':
-        count: int = await db.select_all_files(chat_id, tid)
+        files: List[dict] = await db.get_files(chat_id, tid)
+        count = 0
+        for f in files:
+            await db.update_file_state(chat_id, f['message_id'], STATE_SELECTED)
+            count += 1
         msg = f"✅ Выбрано {count} файлов"
     elif select_type == 'none':
         count = await db.deselect_all_files(chat_id, tid)
@@ -1747,10 +1865,14 @@ async def handle_files_select(uid: int, bot: Any, chat_id: int, topic_id: str, s
 
 async def handle_file_toggle(uid: int, bot: Any, chat_id: int, topic_id: str, file_id: int,
                              type_filter: str, status_filter: str, page: int, edit_id: Optional[int] = None, callback: Optional[Any] = None) -> None:
-    """Переключает выбор отдельного файла."""
+    """Переключает выбор отдельного файла (включая загруженные для повторной загрузки)."""
     db: DatabaseManager = await get_db()
     tid: int = int(topic_id) if topic_id != "0" else 0
-    await db.toggle_file_selected(chat_id, tid, file_id)
+    current_state = await db.get_file_state(chat_id, file_id)
+    if current_state == STATE_UPLOADED:
+        await db.update_file_state(chat_id, file_id, STATE_SELECTED)
+    else:
+        await db.toggle_file_selected(chat_id, tid, file_id)
     invalidate_bot_status_cache()
     state: dict = await _bot_state.get_files_state(f"{uid}_{chat_id}_{topic_id}")
     sort_by: str = state.get('sort_by', 'date')
@@ -1786,7 +1908,7 @@ async def handle_add_chat(uid: int, bot: Any, context: ContextTypes.DEFAULT_TYPE
     """Начинает добавление чата."""
     context.user_data['state'] = 'add_chat'
     context.user_data['current_edit_id'] = edit_id
-    await safe_edit_or_send(bot, uid, edit_id, "➕ <b>ДОБАВЛЕНИЕ ЧАТА</b>\nОтправьте ID чата (-1001234567890):", Keyboard.back("chats"))
+    await safe_edit_or_send(bot, uid, edit_id, "➕ <b>ДОБАВЛЕНИЕ ЧАТА</b>\nОтправьте ID чата (-1001234567890):", Keyboard.back("chats"), is_user_action=True)
 
 
 async def handle_add_chat_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1818,7 +1940,7 @@ async def handle_add_window(uid: int, bot: Any, context: ContextTypes.DEFAULT_TY
     """Начинает добавление окна работы."""
     context.user_data['state'] = 'add_window'
     context.user_data['current_edit_id'] = edit_id
-    await safe_edit_or_send(bot, uid, edit_id, "➕ <b>ДОБАВЛЕНИЕ ОКНА</b>\nОтправьте время начала (9, 9:30, 9.30):", Keyboard.back("windows"))
+    await safe_edit_or_send(bot, uid, edit_id, "➕ <b>ДОБАВЛЕНИЕ ОКНА</b>\nОтправьте время начала (9, 9:30, 9.30):", Keyboard.back("windows"), is_user_action=True)
 
 
 async def handle_add_window_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1853,7 +1975,7 @@ async def handle_add_window_input(update: Update, context: ContextTypes.DEFAULT_
     context.user_data['state'] = 'add_window_end'
     await send_temp_message(context.bot, uid, f"✅ Начало: {start}\nТеперь введите конец")
     await safe_edit_or_send(context.bot, uid, context.user_data.get('current_edit_id'),
-                            "➕ <b>ДОБАВЛЕНИЕ ОКНА</b>\nВведите время окончания:", Keyboard.back("windows"))
+                            "➕ <b>ДОБАВЛЕНИЕ ОКНА</b>\nВведите время окончания:", Keyboard.back("windows"), is_user_action=True)
 
 
 async def handle_add_window_end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1908,7 +2030,7 @@ async def handle_remove_window(uid: int, bot: Any, context: ContextTypes.DEFAULT
         return
     kb: List[List[InlineKeyboardButton]] = [[Keyboard._btn(f"❌ {w['start']} – {w['end']}", f"remove_window_idx:{i}")] for i, w in enumerate(windows)]
     kb.append([Keyboard._btn("◀️ Назад", "windows")])
-    await safe_edit_or_send(bot, uid, edit_id, "🕐 ВЫБЕРИТЕ ОКНО ДЛЯ УДАЛЕНИЯ\n", InlineKeyboardMarkup(kb))
+    await safe_edit_or_send(bot, uid, edit_id, "🕐 ВЫБЕРИТЕ ОКНО ДЛЯ УДАЛЕНИЯ\n", InlineKeyboardMarkup(kb), is_user_action=True)
 
 
 async def handle_remove_window_idx(uid: int, bot: Any, idx: int, edit_id: Optional[int] = None, callback: Optional[Any] = None) -> None:
@@ -2020,10 +2142,10 @@ class CallbackRouter:
                 await handler(callback, bot, uid, args, edit_id, context)
             except Exception as e:
                 logger.error(f"❌ Ошибка в обработчике {cmd}: {e}", exc_info=True)
-                await safe_edit_or_send(bot, uid, edit_id, "⚠️ Ошибка", Keyboard.back("main"))
+                await safe_edit_or_send(bot, uid, edit_id, "⚠️ Ошибка", Keyboard.back("main"), is_user_action=True)
         else:
             logger.warning(f"⚠️ Неизвестная команда: {cmd}")
-            await safe_edit_or_send(bot, uid, edit_id, "⚠️ Неизвестная команда", Keyboard.back("main"))
+            await safe_edit_or_send(bot, uid, edit_id, "⚠️ Неизвестная команда", Keyboard.back("main"), is_user_action=True)
 
 
 _schedule_exit_time: Dict[int, float] = {}
@@ -2124,6 +2246,7 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.info(f"📱 [{uid}] Кнопка: {q.data}")
     edit_id: int = q.message.message_id
     await _bot_state.set_msg(uid, edit_id)
+    invalidate_bot_status_cache()
     try:
         await q.answer()
     except RetryAfter as e:
@@ -2159,7 +2282,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 async def shutdown_bot(app: Application, scheduler: Optional[asyncio.Task] = None) -> None:
     """Останавливает бота."""
     if _shutdown.is_set():
-        return  # Уже останавливаемся
+        return
     logger.info("🛑 Останавливаем бота...")
     _shutdown.set()
     if scheduler and not scheduler.done():
@@ -2198,7 +2321,7 @@ def main() -> None:
     asyncio.set_event_loop(loop)
     
     async def run() -> None:
-        await asyncio.sleep(3)  # Задержка чтобы не флудить при старте
+        await asyncio.sleep(3)
         scheduler: asyncio.Task = asyncio.create_task(schedule_manager(app))
         connect_errors: int = 0
         max_delay: int = 300
