@@ -358,6 +358,7 @@ setup_systemd_service() {
     cd "$HOME/Telegram_to_YaDisk" || return
     
     # Пересоздаём run_bot.sh
+    SETUP_SYSTEMD_LATER=true
     create_run_script
     
     # Создаём сервис с текущим пользователем

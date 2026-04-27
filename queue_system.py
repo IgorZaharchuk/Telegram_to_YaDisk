@@ -767,8 +767,8 @@ class FileProcessor:
                     chat_id=item.chat_id, message_id=item.message_id,
                     filename=item.filename, size=result.size,
                     compressed_size=os.path.getsize(path) if path != item.local_path else 0,
-                    topic_id=item.topic_id, chat_name=chat_name, topic_name=topic_name
-                )
+                    topic_id=item.topic_id, chat_name=chat_name, topic_name=topic_name)
+                self.qs.session_uploaded += 1
                 logger.info(f"📤 Загружен: {item.filename}")
                 return True
 
@@ -816,6 +816,7 @@ class QueueSystem:
         self.session_skipped = 0
         self.session_errors = 0
         self.session_compressed = 0
+        self.session_uploaded = 0
 
     def set_shutdown_manager(self, shutdown_manager: Any) -> None:
         """Устанавливает менеджер завершения."""
@@ -1196,6 +1197,7 @@ class QueueSystem:
         # Очистка старых записей processing
         await self.db.clear_processing()
 
+        await self.db.set_app_state("session_stats", {})
         self.running = True
         await self.db.set_app_state("session_stats", {})
         queue_settings = await self.db.get_queue_settings()
@@ -1331,12 +1333,22 @@ class QueueSystem:
                     counts = _cached_counts
                 
                 if counts:
-                    # Пропускаем адаптацию, если все очереди пусты
+                    # Пропускаем адаптацию, если все очереди пусты И нет активных воркеров
                     total_pending = sum(counts.get(s, 0) for s in (
                         STATUS_PENDING_CHECK, STATUS_PENDING_DOWNLOAD,
                         STATUS_PENDING_COMPRESS, STATUS_PENDING_UPLOAD
                     ))
-                    if total_pending == 0:
+                    processing_keys = await self.db.get_processing_keys()
+                    if total_pending == 0 and not processing_keys:
+                        # Очередь пуста и никто не работает — сохраняем финальные счётчики и засыпаем
+                        await self.db.set_app_state('session_stats', {
+                            'checked': self.pools['check']._processed_count if 'check' in self.pools else 0,
+                            'downloaded': self.pools['download']._processed_count if 'download' in self.pools else 0,
+                            'compressed': self.session_compressed,
+                            'uploaded': self.pools['upload']._processed_count if 'upload' in self.pools else 0,
+                            'skipped': self.session_skipped,
+                            'errors': self.session_errors
+                        })
                         await asyncio.sleep(MONITOR_INTERVAL - 2)
                         continue
                     
@@ -1357,7 +1369,7 @@ class QueueSystem:
                     'checked': self.pools['check']._processed_count if 'check' in self.pools else 0,
                     'downloaded': self.pools['download']._processed_count if 'download' in self.pools else 0,
                     'compressed': self.session_compressed,
-                    'uploaded': self.pools['upload']._processed_count if 'upload' in self.pools else 0,
+                    'uploaded': self.session_uploaded,
                     'skipped': self.session_skipped,
                     'errors': self.session_errors
                 })
