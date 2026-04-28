@@ -915,29 +915,17 @@ class QueueSystem:
 
     async def _complete_item(self, item: QueueItem) -> None:
         """Завершает обработку элемента."""
-        db_conn = await self.db.get_connection()
-        try:
-            await db_conn.execute("BEGIN IMMEDIATE")
-        except Exception:
-            pass  # Транзакция уже активна — ок
-        try:
+        async def op(db_conn):
             await db_conn.execute("DELETE FROM queue_items WHERE key = ?", (item.key,))
             await db_conn.execute("DELETE FROM queue_retry WHERE key = ?", (item.key,))
             await db_conn.execute("DELETE FROM active_progress WHERE key = ?", (item.key,))
             await db_conn.execute("DELETE FROM queue_processing WHERE key = ?", (item.key,))
-            await db_conn.commit()
-        except Exception:
-            await db_conn.rollback()
-            raise
+        await self.db._with_transaction(op)
 
     async def _fail_item(self, item: QueueItem, error: str) -> None:
         """Обрабатывает ошибку элемента с полной очисткой."""
-        db_conn = await self.db.get_connection()
-        try:
-            await db_conn.execute("BEGIN IMMEDIATE")
-        except Exception:
+        async def op(db_conn):
             pass  # Транзакция уже активна — ок
-        try:
             # Очищаем ВСЕ связанные записи
             await db_conn.execute("DELETE FROM queue_retry WHERE key = ?", (item.key,))
             await db_conn.execute("DELETE FROM active_progress WHERE key = ?", (item.key,))
@@ -956,7 +944,7 @@ class QueueSystem:
                     "UPDATE files SET state = ? WHERE chat_id = ? AND message_id = ?",
                     (STATE_ERROR, item.chat_id, item.message_id)
                 )
-                await db_conn.commit()
+                pass  # commit handled by _with_transaction
                 self.session_errors += 1
                 logger.error(f"❌ {item.filename}: фатальная ошибка — {error[:200]}")
                 return
@@ -978,7 +966,7 @@ class QueueSystem:
                     "INSERT OR REPLACE INTO queue_retry (key, retry_at) VALUES (?, ?)",
                     (item.key, time.time() + delay)
                 )
-                await db_conn.commit()
+                pass  # commit handled by _with_transaction
                 asyncio.create_task(self._delayed_retry(item.key, delay))
             else:
                 item.status = FileStatus.FAILED
@@ -997,9 +985,7 @@ class QueueSystem:
                 )
                 await db_conn.commit()
 
-        except Exception:
-            await db_conn.rollback()
-            raise
+        await self.db._with_transaction(op)
 
     # =========================================================================
     # ОТЛОЖЕННЫЕ ПОВТОРНЫЕ ПОПЫТКИ
