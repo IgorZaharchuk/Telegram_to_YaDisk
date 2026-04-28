@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 Telegram Bot для управления Backup
-ВЕРСИЯ 0.18.0 — СЕССИОННЫЕ СЧЁТЧИКИ, РАЗДЕЛЕНИЕ МЕНЮ, AIOLIMITER, ФИКСЫ ОТОБРАЖЕНИЯ
+ВЕРСИЯ 0.18.1 — СЕССИОННЫЕ СЧЁТЧИКИ, РАЗДЕЛЕНИЕ МЕНЮ, AIOLIMITER, ФИКСЫ ОТОБРАЖЕНИЯ
 """
 
-__version__ = "0.18.0"
+__version__ = "0.18.1"
 
 import os
 import sys
@@ -762,6 +762,32 @@ async def _format_main(db: DatabaseManager) -> str:
         if parts:
             lines.append(f"⏳ {' '.join(parts)}")
 
+    # Если очередь пуста и main.py работает — проверим, не идёт ли сканирование
+    if summary.get("pending", 0) == 0 and is_backup_running():
+        scan_progress = await db.get_scan_progress()
+        active_scans = {k: v for k, v in scan_progress.items() if not v.get("completed")}
+        if active_scans:
+            lines.append("")
+            lines.append("🔍 Сканирование чатов...")
+            for cid, data in scan_progress.items():
+                name = data.get("chat_name", f"Чат {cid}")[:30]
+                if data.get("completed"):
+                    new_files = data.get("files_found", 0)
+                    lines.append(f"📁 {name}")
+                    lines.append(f"   [▰▰▰▰▰▰▰▰▰▰▰▰▰] 100%")
+                    if new_files > 0:
+                        lines.append(f"   📊 Найдено файлов: {new_files}")
+                else:
+                    pct = data.get("percent", 0)
+                    bar = "▰" * int(C.PROGRESS_BAR_WIDTH * pct / 100) + "▱" * (C.PROGRESS_BAR_WIDTH - int(C.PROGRESS_BAR_WIDTH * pct / 100))
+                    topic = data.get("current_topic", "")
+                    files_found = data.get("files_found", 0)
+                    lines.append(f"📁 {name}")
+                    lines.append(f"   {bar} {pct:.0f}%")
+                    if topic:
+                        lines.append(f"   📂 {topic[:35]}")
+                    if files_found > 0:
+                        lines.append(f"   📊 Всего файлов: {files_found}")
     return "\n".join(lines)[:C.MAX_MSG_LEN]
 
 
@@ -2149,6 +2175,7 @@ class CallbackRouter:
 
 
 _schedule_exit_time: Dict[int, float] = {}
+_launched_this_window: bool = False
 _shutdown: asyncio.Event = asyncio.Event()
 
 
@@ -2169,13 +2196,15 @@ async def schedule_manager(app: Application) -> None:
             should_run: bool = await db.should_run_now()
             
             if should_run:
-                if not is_backup_running():
+                if not is_backup_running() and not _launched_this_window:
                     logger.info("🕐 Автозапуск бэкапа по расписанию")
                     subprocess.Popen([sys.executable, "main.py"], stdout=subprocess.DEVNULL,
                                      stderr=subprocess.DEVNULL, start_new_session=True)
                     invalidate_bot_status_cache()
+                    _launched_this_window = True
                     _schedule_exit_time.clear()
             else:
+                _launched_this_window = False
                 if auto and windows and is_backup_running():
                     if 0 not in _schedule_exit_time:
                         _schedule_exit_time[0] = time.time()

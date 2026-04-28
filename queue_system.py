@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 Система очередей - ОДНОРАЗОВЫЕ ВОРКЕРЫ, АТОМАРНЫЙ ЗАХВАТ, ВАЛИДАЦИЯ
-ВЕРСИЯ 0.18.0 — SESSION_SKIPPED/COMPRESSED/ERRORS, КЭШ COUNTS, BATCH ЛИМИТ, ВЫВОД ЛОГА
+ВЕРСИЯ 0.18.1 — SESSION_SKIPPED/COMPRESSED/ERRORS, КЭШ COUNTS, BATCH ЛИМИТ, ВЫВОД ЛОГА
 """
 
-__version__ = "0.18.0"
+__version__ = "0.18.1"
 
 import os
 import asyncio
@@ -1619,7 +1619,14 @@ class QueueSystem:
         for cid in chat_ids:
             if self._shutdown_manager and self._shutdown_manager.is_requested():
                 break
-            await self.tg.incremental_scan_chat(cid, self.db)
+            
+            chat_name = await self.processor._get_chat_name(cid)
+            await self.db.update_scan_progress(cid, chat_name, 0, 0, 0, None, False)
+            
+            async def progress_callback(chat_id, chat_name, current_id, max_id, files_found, current_topic, completed):
+                await self.db.update_scan_progress(chat_id, chat_name, current_id, max_id, files_found, current_topic, completed)
+            
+            await self.tg.incremental_scan_chat(cid, self.db, progress_callback)
 
     async def _mark_new_files_as_selected(self, chat_ids: List[int]) -> None:
         """Переводит новые файлы в статус SELECTED."""

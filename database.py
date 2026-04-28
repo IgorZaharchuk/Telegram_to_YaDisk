@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 Единый модуль работы с базой данных SQLite
-ВЕРСИЯ 0.18.0 — _write_lock ДЛЯ ВСЕХ ТРАНЗАКЦИЙ, COUNT(DISTINCT), SESSION_STATS
+ВЕРСИЯ 0.18.1 — _write_lock ДЛЯ ВСЕХ ТРАНЗАКЦИЙ, COUNT(DISTINCT), SESSION_STATS
 """
 
-__version__ = "0.18.0"
+__version__ = "0.18.1"
 
 import os
 import json
