@@ -657,8 +657,7 @@ class FileProcessor:
                     item.compressed_path = result.compressed_path
                     try:
                         await self.db.update_queue_item_paths(
-                            item.key, compressed_path=result.compressed_path
-                        )
+                            item.key, compressed_path=result.compressed_path)
                         await self.db.record_compressed(
                         chat_id=item.chat_id, message_id=item.message_id,
                         filename=item.filename,
@@ -669,7 +668,6 @@ class FileProcessor:
                     )
                     except Exception:
                         pass  # БД занята — не критично для сжатия
-
             elif result.success and not result.was_compressed:
                 logger.info(
                     f"{'🎬' if is_video else '📸'} {item.filename} "
@@ -921,14 +919,14 @@ class QueueSystem:
             await db_conn.execute("DELETE FROM active_progress WHERE key = ?", (item.key,))
             await db_conn.execute("DELETE FROM queue_processing WHERE key = ?", (item.key,))
         await self.db._with_transaction(op)
-        if retry_key:
-            asyncio.create_task(self._delayed_retry(retry_key, retry_delay))
 
     async def _fail_item(self, item: QueueItem, error: str) -> None:
         """Обрабатывает ошибку элемента с полной очисткой."""
+        retry_key: Optional[str] = None
+        retry_delay: float = 0.0
+
         async def op(db_conn):
-            pass  # Транзакция уже активна — ок
-            # Очищаем ВСЕ связанные записи
+            nonlocal retry_key, retry_delay
             await db_conn.execute("DELETE FROM queue_retry WHERE key = ?", (item.key,))
             await db_conn.execute("DELETE FROM active_progress WHERE key = ?", (item.key,))
             await db_conn.execute("DELETE FROM queue_processing WHERE key = ?", (item.key,))
@@ -946,7 +944,6 @@ class QueueSystem:
                     "UPDATE files SET state = ? WHERE chat_id = ? AND message_id = ?",
                     (STATE_ERROR, item.chat_id, item.message_id)
                 )
-                pass  # commit handled by _with_transaction
                 self.session_errors += 1
                 logger.error(f"❌ {item.filename}: фатальная ошибка — {error[:200]}")
                 return
@@ -968,8 +965,6 @@ class QueueSystem:
                     "INSERT OR REPLACE INTO queue_retry (key, retry_at) VALUES (?, ?)",
                     (item.key, time.time() + delay)
                 )
-                pass  # commit handled by _with_transaction
-                asyncio.create_task(self._delayed_retry(item.key, delay))
             else:
                 item.status = FileStatus.FAILED
                 logger.error(
@@ -985,7 +980,6 @@ class QueueSystem:
                     "UPDATE files SET state = ? WHERE chat_id = ? AND message_id = ?",
                     (STATE_ERROR, item.chat_id, item.message_id)
                 )
-                await db_conn.commit()
 
         await self.db._with_transaction(op)
         if retry_key:
