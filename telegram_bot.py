@@ -2181,6 +2181,7 @@ _shutdown: asyncio.Event = asyncio.Event()
 
 async def schedule_manager(app: Application) -> None:
     """Менеджер расписания — ТОЛЬКО запуск/остановка main.py, без API запросов."""
+    global _launched_this_window
     check_interval: int = 60
     while not _shutdown.is_set():
         try:
