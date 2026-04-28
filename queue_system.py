@@ -921,6 +921,8 @@ class QueueSystem:
             await db_conn.execute("DELETE FROM active_progress WHERE key = ?", (item.key,))
             await db_conn.execute("DELETE FROM queue_processing WHERE key = ?", (item.key,))
         await self.db._with_transaction(op)
+        if retry_key:
+            asyncio.create_task(self._delayed_retry(retry_key, retry_delay))
 
     async def _fail_item(self, item: QueueItem, error: str) -> None:
         """Обрабатывает ошибку элемента с полной очисткой."""
@@ -986,6 +988,8 @@ class QueueSystem:
                 await db_conn.commit()
 
         await self.db._with_transaction(op)
+        if retry_key:
+            asyncio.create_task(self._delayed_retry(retry_key, retry_delay))
 
     # =========================================================================
     # ОТЛОЖЕННЫЕ ПОВТОРНЫЕ ПОПЫТКИ
