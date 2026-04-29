@@ -364,7 +364,7 @@ class DatabaseManager:
             row = await cursor.fetchone()
             actual_total = row[0]
             actual_bytes = row[1] or 0
-            await self.execute("UPDATE chat_stats SET total = ?, total_bytes = ?, updated_at = ? WHERE chat_id = ?", (actual_total, actual_bytes, time.time(), chat_id))
+            await self.execute("INSERT OR REPLACE INTO chat_stats (chat_id, total, total_bytes, updated_at) VALUES (?, ?, ?, ?)", (chat_id, actual_total, actual_bytes, time.time()))
             await self.commit()
     
     async def update_file_state(self, chat_id: int, message_id: int, state: int) -> bool:
