@@ -1644,7 +1644,10 @@ async def handle_refresh_cache(uid: int, bot: Any, chat_id: int, edit_id: Option
                 msg_id = await _bot_state.get_msg(uid)
                 if msg_id:
                     await safe_edit(bot, uid, msg_id, text, kb, is_user_action=False)
-        # Не создаём новое сообщение — отредактируем текущее когда завершится
+        text, kb = await MenuRenderer(bot, uid)._render_chat_manage(chat_id=chat_id)
+        msg_id = await _bot_state.get_msg(uid)
+        if msg_id:
+            await safe_edit(bot, uid, msg_id, text, kb, is_user_action=False)
     asyncio.create_task(watch_scan())
 
 
