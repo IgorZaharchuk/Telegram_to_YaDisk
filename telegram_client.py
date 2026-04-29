@@ -652,7 +652,17 @@ class TelegramDownloader:
         except Exception as e:
             logger.debug(f"Не удалось получить имя чата: {e}")
         
-        await self.load_all_topics(chat_id, force_refresh=True)
+        topics_dict = await self.load_all_topics(chat_id, force_refresh=True)
+        
+        # Удаляем из БД темы, которых уже нет в чате
+        db_topics = await db.get_topics(chat_id)
+        actual_ids = {int(tid) for tid in topics_dict.keys()}
+        for t in db_topics:
+            if t['topic_id'] not in actual_ids and t['topic_id'] != 0:
+                await db.execute("DELETE FROM topics WHERE chat_id = ? AND topic_id = ?", (chat_id, t['topic_id']))
+                await db.execute("DELETE FROM files WHERE chat_id = ? AND topic_id = ?", (chat_id, t['topic_id']))
+                logger.info(f"   🗑️ Удалена несуществующая тема: {t['topic_name']} ({t['topic_id']})")
+        await db.commit()
         
         messages: List[Message] = await self._scan_chat(chat_id, 'full', progress_callback)
         if not messages:
