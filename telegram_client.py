@@ -521,7 +521,8 @@ class TelegramDownloader:
     # ========================================================================
 
     async def _scan_chat(self, chat_id: int, mode: str = 'full',
-                         progress_callback: Optional[Callable] = None) -> List[Message]:
+                         progress_callback: Optional[Callable] = None,
+                         existing_ids: Optional[Set[int]] = None) -> List[Message]:
         """Универсальный метод сканирования чата."""
         files: List[Message] = []
         last_id: int = 0
@@ -548,7 +549,14 @@ class TelegramDownloader:
                     max_id = messages[0].id
                     logger.info(f"   📊 Максимальный ID сообщения: {max_id}")
 
+                found_existing: bool = False
                 for msg in messages:
+                    # РАННИЙ ВЫХОД для инкрементального режима
+                    if mode == 'incremental' and existing_ids and msg.id in existing_ids:
+                        logger.debug(f"   🛑 Встречен существующий ID {msg.id}, останавливаем сканирование")
+                        found_existing = True
+                        break
+                    
                     if self._has_file(msg):
                         files.append(msg)
                         msg_topic_id: Optional[int] = self.get_topic_id_from_message(msg)
@@ -556,6 +564,9 @@ class TelegramDownloader:
                             current_topic = await self.get_topic_name(chat_id, msg_topic_id) or f"Тема {msg_topic_id}"
                         else:
                             current_topic = "общая тема"
+
+                if found_existing:
+                    break
 
                 last_msg_id: int = messages[-1].id
                 if progress_callback and max_id > 0:
@@ -672,7 +683,7 @@ class TelegramDownloader:
         
         logger.debug(f"   Существующих файлов: {len(existing_ids)}")
         
-        messages: List[Message] = await self._scan_chat(chat_id, 'incremental', progress_callback)
+        messages: List[Message] = await self._scan_chat(chat_id, 'incremental', progress_callback, existing_ids)
         new_messages: List[Message] = [m for m in messages if m.id not in existing_ids and self._has_file(m)]
         
         if not new_messages:
