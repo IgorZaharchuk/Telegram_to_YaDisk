@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 Единый модуль работы с базой данных SQLite
-ВЕРСИЯ 0.18.2 — _write_lock ДЛЯ ВСЕХ ТРАНЗАКЦИЙ, COUNT(DISTINCT), SESSION_STATS
+ВЕРСИЯ 0.18.3 — _write_lock ДЛЯ ВСЕХ ТРАНЗАКЦИЙ, COUNT(DISTINCT), SESSION_STATS
 """
 
-__version__ = "0.18.2"
+__version__ = "0.18.3"
 
 import os
 import json
@@ -359,18 +359,20 @@ class DatabaseManager:
         if data:
             await self.executemany("INSERT OR IGNORE INTO files (chat_id, topic_id, message_id, filename, file_type, size, state, attempts, last_error, file_id, dc_id, timestamp, md5) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", data)
             await self.commit()
-            cursor: aiosqlite.Cursor = await self.execute("SELECT COUNT(DISTINCT message_id), COALESCE(SUM(DISTINCT size), 0) FROM files WHERE chat_id = ?", (chat_id,))
-            row: aiosqlite.Row = await cursor.fetchone()
-            actual_total: int = row[0]
-            actual_bytes: int = row[1]
-            await self.execute("INSERT INTO chat_stats (chat_id, total, total_bytes, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET total = ?, total_bytes = ?, updated_at = ?", (chat_id, actual_total, actual_bytes, time.time(), actual_total, actual_bytes, time.time()))
+            # Пересчитываем chat_stats из реальных данных
+            cursor = await self.execute("SELECT COUNT(*), COALESCE(SUM(size), 0) FROM files WHERE chat_id = ?", (chat_id,))
+            row = await cursor.fetchone()
+            actual_total = row[0]
+            actual_bytes = row[1] or 0
+            await self.execute("UPDATE chat_stats SET total = ?, total_bytes = ?, updated_at = ? WHERE chat_id = ?", (actual_total, actual_bytes, time.time(), chat_id))
             await self.commit()
     
     async def update_file_state(self, chat_id: int, message_id: int, state: int) -> bool:
         """Обновляет статус файла."""
-        cursor: aiosqlite.Cursor = await self.execute("UPDATE files SET state = ?, attempts = 0, last_error = NULL WHERE chat_id = ? AND message_id = ?", (state, chat_id, message_id))
-        await self.commit()
-        return cursor.rowcount > 0
+        async def op(db_conn):
+            cursor = await db_conn.execute("UPDATE files SET state = ?, attempts = 0, last_error = NULL WHERE chat_id = ? AND message_id = ?", (state, chat_id, message_id))
+            return cursor.rowcount > 0
+        return await self._with_transaction(op)
     
     async def _with_transaction(self, operation: Callable[[aiosqlite.Connection], Awaitable[Any]], max_retries: int = 5) -> Any:
         """Выполняет операцию в транзакции с retry при блокировках."""
@@ -513,9 +515,10 @@ class DatabaseManager:
     
     async def set_file_md5(self, chat_id: int, message_id: int, md5: str) -> bool:
         """Устанавливает MD5 хеш файла."""
-        cursor: aiosqlite.Cursor = await self.execute("UPDATE files SET md5 = ? WHERE chat_id = ? AND message_id = ?", (md5, chat_id, message_id))
-        await self.commit()
-        return cursor.rowcount > 0
+        async def op(db_conn):
+            cursor = await db_conn.execute("UPDATE files SET md5 = ? WHERE chat_id = ? AND message_id = ?", (md5, chat_id, message_id))
+            return cursor.rowcount > 0
+        return await self._with_transaction(op)
     
     async def get_file_md5(self, chat_id: int, message_id: int) -> Optional[str]:
         """Возвращает MD5 хеш файла."""
@@ -532,21 +535,24 @@ class DatabaseManager:
         return row['state'] if row else None
     
     async def add_queue_item(self, item: dict) -> bool:
-        """Добавляет элемент в очередь."""
+        """Добавляет элемент в очередь (атомарно)."""
         await self.ensure_loaded()
         key: str = f"{item['chat_id']}:{item['message_id']}"
-        cursor: aiosqlite.Cursor = await self.execute("SELECT key FROM queue_items WHERE key = ?", (key,))
-        if await cursor.fetchone():
-            return False
-        ext: str = os.path.splitext(item['filename'])[1].lower()
-        file_type: str = 'other'
-        for ft, exts in self._cache.get('file_types', {}).items():
-            if ext in exts:
-                file_type = ft
-                break
-        await self.execute("INSERT INTO queue_items (key, chat_id, message_id, topic_id, filename, remote_dir, local_path, compressed_path, file_size, file_type, status, attempts, max_attempts, created_at, updated_at, metadata, file_info) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (key, item['chat_id'], item['message_id'], item.get('topic_id'), item['filename'], item['remote_dir'], item.get('local_path', ''), item.get('compressed_path', ''), item.get('file_size', 0), file_type, item.get('status', STATUS_PENDING_CHECK), item.get('attempts', 0), item.get('max_attempts', 3), item.get('created_at', time.time()), item.get('updated_at', time.time()), json.dumps(item.get('metadata', {})), json.dumps(item.get('file_info', {}))))
-        await self.commit()
-        return True
+        
+        async def do_add(db_conn):
+            cursor = await db_conn.execute("SELECT key FROM queue_items WHERE key = ?", (key,))
+            if await cursor.fetchone():
+                return False
+            ext: str = os.path.splitext(item['filename'])[1].lower()
+            file_type: str = 'other'
+            for ft, exts in self._cache.get('file_types', {}).items():
+                if ext in exts:
+                    file_type = ft
+                    break
+            await db_conn.execute("INSERT INTO queue_items (key, chat_id, message_id, topic_id, filename, remote_dir, local_path, compressed_path, file_size, file_type, status, attempts, max_attempts, created_at, updated_at, metadata, file_info) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (key, item['chat_id'], item['message_id'], item.get('topic_id'), item['filename'], item['remote_dir'], item.get('local_path', ''), item.get('compressed_path', ''), item.get('file_size', 0), file_type, item.get('status', STATUS_PENDING_CHECK), item.get('attempts', 0), item.get('max_attempts', 3), item.get('created_at', time.time()), item.get('updated_at', time.time()), json.dumps(item.get('metadata', {})), json.dumps(item.get('file_info', {}))))
+            return True
+        
+        return await self._with_transaction(do_add)
     
     async def get_queue_item(self, key: str) -> Optional[dict]:
         """Возвращает элемент очереди по ключу (None если нет)."""
@@ -599,11 +605,12 @@ class DatabaseManager:
     
     async def update_queue_status(self, key: str, status: str, attempts: Optional[int] = None, last_error: Optional[str] = None) -> None:
         """Обновляет статус элемента очереди."""
-        if attempts is not None:
-            await self.execute("UPDATE queue_items SET status = ?, attempts = ?, last_error = ?, updated_at = ? WHERE key = ?", (status, attempts, last_error, time.time(), key))
-        else:
-            await self.execute("UPDATE queue_items SET status = ?, updated_at = ? WHERE key = ?", (status, time.time(), key))
-        await self.commit()
+        async def op(db_conn):
+            if attempts is not None:
+                await db_conn.execute("UPDATE queue_items SET status = ?, attempts = ?, last_error = ?, updated_at = ? WHERE key = ?", (status, attempts, last_error, time.time(), key))
+            else:
+                await db_conn.execute("UPDATE queue_items SET status = ?, updated_at = ? WHERE key = ?", (status, time.time(), key))
+        await self._with_transaction(op)
     
     async def update_queue_item_paths(self, key: str, local_path: Optional[str] = None, compressed_path: Optional[str] = None, file_size: Optional[int] = None) -> None:
         """Атомарно обновляет пути и размер элемента очереди."""
@@ -628,8 +635,9 @@ class DatabaseManager:
     
     async def delete_queue_item(self, key: str) -> None:
         """Удаляет элемент из очереди."""
-        await self.execute("DELETE FROM queue_items WHERE key = ?", (key,))
-        await self.commit()
+        async def op(db_conn):
+            await db_conn.execute("DELETE FROM queue_items WHERE key = ?", (key,))
+        await self._with_transaction(op)
     
     async def clear_queue(self) -> None:
         """Очищает все очереди."""
@@ -692,17 +700,19 @@ class DatabaseManager:
     async def add_processing(self, key: str, worker_id: int, worker_type: str) -> bool:
         """Добавляет запись о обработке элемента."""
         try:
-            now: float = time.time()
-            await self.execute("INSERT OR IGNORE INTO queue_processing (key, worker_id, worker_type, started_at, updated_at) VALUES (?, ?, ?, ?, ?)", (key, worker_id, worker_type, now, now))
-            await self.commit()
-            return True
+            async def op(db_conn):
+                now: float = time.time()
+                await db_conn.execute("INSERT OR IGNORE INTO queue_processing (key, worker_id, worker_type, started_at, updated_at) VALUES (?, ?, ?, ?, ?)", (key, worker_id, worker_type, now, now))
+                return True
+            return await self._with_transaction(op)
         except Exception:
             return False
     
     async def remove_processing(self, key: str) -> None:
         """Удаляет запись о обработке элемента."""
-        await self.execute("DELETE FROM queue_processing WHERE key = ?", (key,))
-        await self.commit()
+        async def op(db_conn):
+            await db_conn.execute("DELETE FROM queue_processing WHERE key = ?", (key,))
+        await self._with_transaction(op)
     
     async def clear_processing(self) -> None:
         """Очищает все записи о обработке."""
@@ -728,13 +738,15 @@ class DatabaseManager:
     
     async def add_retry(self, key: str, delay: float) -> None:
         """Добавляет задачу на повторную попытку."""
-        await self.execute("INSERT OR REPLACE INTO queue_retry (key, retry_at) VALUES (?, ?)", (key, time.time() + delay))
-        await self.commit()
+        async def op(db_conn):
+            await db_conn.execute("INSERT OR REPLACE INTO queue_retry (key, retry_at) VALUES (?, ?)", (key, time.time() + delay))
+        await self._with_transaction(op)
     
     async def cancel_retry(self, key: str) -> None:
         """Отменяет повторную попытку."""
-        await self.execute("DELETE FROM queue_retry WHERE key = ?", (key,))
-        await self.commit()
+        async def op(db_conn):
+            await db_conn.execute("DELETE FROM queue_retry WHERE key = ?", (key,))
+        await self._with_transaction(op)
     
     async def update_progress(self, key: str, data: dict) -> None:
         """Обновляет прогресс обработки."""
@@ -748,13 +760,15 @@ class DatabaseManager:
     
     async def clear_progress(self, key: str) -> None:
         """Очищает прогресс элемента."""
-        await self.execute("DELETE FROM active_progress WHERE key = ?", (key,))
-        await self.commit()
+        async def op(db_conn):
+            await db_conn.execute("DELETE FROM active_progress WHERE key = ?", (key,))
+        await self._with_transaction(op)
     
     async def add_history(self, entry: dict) -> None:
         """Добавляет запись в историю."""
-        await self.execute("INSERT INTO history (timestamp, chat_id, topic_id, message_id, filename, status, size, compressed_size, stage, error, details, chat_name, topic_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (entry.get('timestamp', time.time()), entry.get('chat_id'), entry.get('topic_id'), entry.get('message_id'), entry.get('filename'), entry.get('status'), entry.get('size', 0), entry.get('compressed_size', 0), entry.get('stage', ''), entry.get('error', ''), json.dumps(entry.get('details', {})), entry.get('chat_name', ''), entry.get('topic_name', '')))
-        await self.commit()
+        async def op(db_conn):
+            await db_conn.execute("INSERT INTO history (timestamp, chat_id, topic_id, message_id, filename, status, size, compressed_size, stage, error, details, chat_name, topic_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (entry.get('timestamp', time.time()), entry.get('chat_id'), entry.get('topic_id'), entry.get('message_id'), entry.get('filename'), entry.get('status'), entry.get('size', 0), entry.get('compressed_size', 0), entry.get('stage', ''), entry.get('error', ''), json.dumps(entry.get('details', {})), entry.get('chat_name', ''), entry.get('topic_name', '')))
+        await self._with_transaction(op)
     
     async def _record_event(self, event_type: str, **kwargs: Any) -> None:
         """Записывает событие в историю и обновляет статистику."""
@@ -831,13 +845,15 @@ class DatabaseManager:
     
     async def update_chat_stats(self, chat_id: int, data: dict) -> None:
         """Обновляет статистику чата."""
-        await self.execute("INSERT INTO chat_stats (chat_id, total, uploaded, skipped, errors, compressed, total_bytes, uploaded_bytes, saved_bytes, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET total = total + ?, uploaded = uploaded + ?, skipped = skipped + ?, errors = errors + ?, compressed = compressed + ?, total_bytes = total_bytes + ?, uploaded_bytes = uploaded_bytes + ?, saved_bytes = saved_bytes + ?, updated_at = ?", (chat_id, data.get('total', 0), data.get('uploaded', 0), data.get('skipped', 0), data.get('errors', 0), data.get('compressed', 0), data.get('total_bytes', 0), data.get('uploaded_bytes', 0), data.get('saved_bytes', 0), time.time(), data.get('total', 0), data.get('uploaded', 0), data.get('skipped', 0), data.get('errors', 0), data.get('compressed', 0), data.get('total_bytes', 0), data.get('uploaded_bytes', 0), data.get('saved_bytes', 0), time.time()))
-        await self.commit()
+        async def op(db_conn):
+            await db_conn.execute("INSERT INTO chat_stats (chat_id, total, uploaded, skipped, errors, compressed, total_bytes, uploaded_bytes, saved_bytes, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET total = total + ?, uploaded = uploaded + ?, skipped = skipped + ?, errors = errors + ?, compressed = compressed + ?, total_bytes = total_bytes + ?, uploaded_bytes = uploaded_bytes + ?, saved_bytes = saved_bytes + ?, updated_at = ?", (chat_id, data.get('total', 0), data.get('uploaded', 0), data.get('skipped', 0), data.get('errors', 0), data.get('compressed', 0), data.get('total_bytes', 0), data.get('uploaded_bytes', 0), data.get('saved_bytes', 0), time.time(), data.get('total', 0), data.get('uploaded', 0), data.get('skipped', 0), data.get('errors', 0), data.get('compressed', 0), data.get('total_bytes', 0), data.get('uploaded_bytes', 0), data.get('saved_bytes', 0), time.time()))
+        await self._with_transaction(op)
     
     async def update_stage_stats(self, stage: str, data: dict) -> None:
         """Обновляет статистику этапа обработки."""
-        await self.execute("INSERT INTO stage_stats (stage, processed, skipped, from_cache, success, failed, saved_bytes, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(stage) DO UPDATE SET processed = processed + ?, skipped = skipped + ?, from_cache = from_cache + ?, success = success + ?, failed = failed + ?, saved_bytes = saved_bytes + ?, updated_at = ?", (stage, data.get('processed', 0), data.get('skipped', 0), data.get('from_cache', 0), data.get('success', 0), data.get('failed', 0), data.get('saved_bytes', 0), time.time(), data.get('processed', 0), data.get('skipped', 0), data.get('from_cache', 0), data.get('success', 0), data.get('failed', 0), data.get('saved_bytes', 0), time.time()))
-        await self.commit()
+        async def op(db_conn):
+            await db_conn.execute("INSERT INTO stage_stats (stage, processed, skipped, from_cache, success, failed, saved_bytes, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(stage) DO UPDATE SET processed = processed + ?, skipped = skipped + ?, from_cache = from_cache + ?, success = success + ?, failed = failed + ?, saved_bytes = saved_bytes + ?, updated_at = ?", (stage, data.get('processed', 0), data.get('skipped', 0), data.get('from_cache', 0), data.get('success', 0), data.get('failed', 0), data.get('saved_bytes', 0), time.time(), data.get('processed', 0), data.get('skipped', 0), data.get('from_cache', 0), data.get('success', 0), data.get('failed', 0), data.get('saved_bytes', 0), time.time()))
+        await self._with_transaction(op)
     
     async def get_chat_stats(self, chat_id: Optional[int] = None) -> dict:
         """Возвращает статистику по всем чатам или конкретному."""
@@ -855,13 +871,15 @@ class DatabaseManager:
     
     async def add_file_error(self, error: dict) -> None:
         """Добавляет ошибку файла."""
-        await self.execute("INSERT INTO file_errors (timestamp, chat_id, chat_name, topic_id, topic_name, message_id, filename, stage, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (error.get('timestamp', time.time()), error.get('chat_id'), error.get('chat_name', ''), error.get('topic_id'), error.get('topic_name', ''), error.get('message_id'), error.get('filename'), error.get('stage', ''), error.get('error', '')[:500]))
-        await self.commit()
+        async def op(db_conn):
+            await db_conn.execute("INSERT INTO file_errors (timestamp, chat_id, chat_name, topic_id, topic_name, message_id, filename, stage, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (error.get('timestamp', time.time()), error.get('chat_id'), error.get('chat_name', ''), error.get('topic_id'), error.get('topic_name', ''), error.get('message_id'), error.get('filename'), error.get('stage', ''), error.get('error', '')[:500]))
+        await self._with_transaction(op)
     
     async def add_system_error(self, error: dict) -> None:
         """Добавляет системную ошибку."""
-        await self.execute("INSERT INTO system_errors (timestamp, component, error, details) VALUES (?, ?, ?, ?)", (error.get('timestamp', time.time()), error.get('component', ''), error.get('error', '')[:500], json.dumps(error.get('details', {}))))
-        await self.commit()
+        async def op(db_conn):
+            await db_conn.execute("INSERT INTO system_errors (timestamp, component, error, details) VALUES (?, ?, ?, ?)", (error.get('timestamp', time.time()), error.get('component', ''), error.get('error', '')[:500], json.dumps(error.get('details', {}))))
+        await self._with_transaction(op)
     
     async def get_file_errors(self, limit: int = 50) -> List[dict]:
         """Возвращает ошибки файлов."""
@@ -891,9 +909,10 @@ class DatabaseManager:
     
     async def update_scan_progress(self, chat_id: int, chat_name: str, current_id: int, max_id: int, files_found: int, current_topic: Optional[str] = None, completed: bool = False) -> None:
         """Обновляет прогресс сканирования."""
-        percent: float = 100 if completed else (0 if max_id == 0 else min(100, max(0, ((max_id - current_id) / max_id) * 100)))
-        await self.execute("INSERT INTO scan_progress (chat_id, chat_name, current_id, max_id, percent, files_found, current_topic, completed, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET current_id = ?, max_id = ?, percent = ?, files_found = ?, current_topic = ?, completed = ?, updated_at = ?", (chat_id, chat_name, current_id, max_id, percent, files_found, current_topic, completed, time.time(), current_id, max_id, percent, files_found, current_topic, completed, time.time()))
-        await self.commit()
+        async def op(db_conn):
+            percent: float = 100 if completed else (0 if max_id == 0 else min(100, max(0, ((max_id - current_id) / max_id) * 100)))
+            await db_conn.execute("INSERT INTO scan_progress (chat_id, chat_name, current_id, max_id, percent, files_found, current_topic, completed, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET current_id = ?, max_id = ?, percent = ?, files_found = ?, current_topic = ?, completed = ?, updated_at = ?", (chat_id, chat_name, current_id, max_id, percent, files_found, current_topic, completed, time.time(), current_id, max_id, percent, files_found, current_topic, completed, time.time()))
+        await self._with_transaction(op)
     
     async def get_scan_progress(self) -> Dict[str, dict]:
         """Возвращает прогресс сканирования."""
@@ -1057,7 +1076,10 @@ class DatabaseManager:
         chat_uploaded, chat_compressed, chat_saved_bytes, chat_total_bytes = (row['uploaded'], row['compressed'], row['saved_bytes'], row['total_bytes']) if row else (0, 0, 0, 0)
         async with self._write_lock:
             for table in ['queue_items', 'files', 'topics', 'chat_names', 'chat_stats', 'scan_progress', 'history', 'file_errors']:
-                await self.execute(f"DELETE FROM {table} WHERE chat_id = ?", (chat_id,))
+                try:
+                    await self.execute(f"DELETE FROM {table} WHERE chat_id = ?", (chat_id,))
+                except Exception as e:
+                    logger.error(f"❌ Ошибка удаления из {table}: {e}")
             if chat_uploaded > 0:
                 await self.execute("UPDATE stage_stats SET processed = MAX(0, processed - ?), success = MAX(0, success - ?), updated_at = ? WHERE stage = 'upload'", (chat_uploaded, chat_uploaded, time.time()))
             if chat_compressed > 0 or chat_saved_bytes > 0:
@@ -1157,8 +1179,9 @@ class DatabaseManager:
     
     async def set_app_state(self, key: str, value: Any) -> None:
         """Устанавливает состояние приложения."""
-        await self.execute("INSERT OR REPLACE INTO app_state (key, value, updated_at) VALUES (?, ?, ?)", (key, json.dumps(value, ensure_ascii=False), time.time()))
-        await self.commit()
+        async def op(db_conn):
+            await db_conn.execute("INSERT OR REPLACE INTO app_state (key, value, updated_at) VALUES (?, ?, ?)", (key, json.dumps(value, ensure_ascii=False), time.time()))
+        await self._with_transaction(op)
     
     async def get_chat_topics_status(self, chat_id: int) -> List[dict]:
         """Возвращает статус тем чата."""
