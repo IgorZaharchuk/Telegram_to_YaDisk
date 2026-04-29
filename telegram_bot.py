@@ -686,7 +686,9 @@ def format_active_files(status: dict, context: str = 'main', max_items: Optional
                 speed, eta = _compress_speed_cache[cache_key]
             
             lines.append(f"🗜️ {filename}  {size_str}")
-            if context == 'main' and progress > 0 and show_progress:
+            # Не показываем 100% если нет скорости — глюк ffmpeg в начале
+            fake_100 = (progress is not None and progress >= 99.9 and (speed or 0) == 0)
+            if context == 'main' and progress > 0 and show_progress and not fake_100:
                 lines.append(f"   {fmt_bar(progress)}")
                 if (speed or 0) > 0:
                     info: str = f"   x{speed:.1f}"
