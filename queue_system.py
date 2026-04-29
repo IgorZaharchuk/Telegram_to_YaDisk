@@ -587,6 +587,7 @@ class FileProcessor:
                 else FileStatus.PENDING_UPLOAD
             )
             await self.qs._update_item(item, next_status, worker_id=worker_id)
+            self.qs.session_downloaded += 1
             logger.info(f"📥 Скачан: {item.filename} ({fmt_size(item.file_size)})")
             return True
 
@@ -813,6 +814,7 @@ class QueueSystem:
         self.session_errors = 0
         self.session_compressed = 0
         self.session_uploaded = 0
+        self.session_downloaded = 0
 
     def set_shutdown_manager(self, shutdown_manager: Any) -> None:
         """Устанавливает менеджер завершения."""
@@ -1606,13 +1608,11 @@ class QueueSystem:
                 
                 # Фильтруем только те, что ещё не в очереди и не загружены
                 for file_info in files[:remaining]:
-                    key = f"{cid}:{file_info['message_id']}"
+                    # Пропускаем уже загруженные или пропущенные
+                    if file_info.get('state') in (STATE_UPLOADED, STATE_SKIPPED):
+                        continue
                     
-                    # Дополнительная проверка state перед добавлением
-                    current_state = await self.db.get_file_state(cid, file_info['message_id'])
-                    if current_state == STATE_UPLOADED:
-                        continue  # Уже загружен
-                        
+                    key = f"{cid}:{file_info['message_id']}"
                     files_to_check.append(key)
                     files_info_map[key] = (cid, topic, file_info, chat_name)
 
@@ -1703,7 +1703,7 @@ class QueueSystem:
             pending = await self.db.count_pending()
             processing = await self.db.get_processing_keys()
 
-            if pending < self.REFILL_THRESHOLD and not processing:
+            if pending < self.REFILL_THRESHOLD and not processing and pending == 0:
                 logger.info(f"📦 Очередь: {pending} файлов. Добавляем следующую пачку...")
 
                 added = await self._add_selected_files_batch(chat_ids, self.BATCH_SIZE)
@@ -1738,19 +1738,14 @@ class QueueSystem:
 
             await asyncio.sleep(30)
 
-        checked = self.pools['check']._processed_count if 'check' in self.pools else 0
-        downloaded = self.pools['download']._processed_count if 'download' in self.pools else 0
-        compressed = (self.pools.get('compress_photo') and self.pools['compress_photo']._processed_count or 0) +                      (self.pools.get('compress_video') and self.pools['compress_video']._processed_count or 0)
-        uploaded = self.pools['upload']._processed_count if 'upload' in self.pools else 0
-        
         if not (self._shutdown_manager and self._shutdown_manager.is_requested()):
             await self.cleanup_all_downloads(force=True)
             logger.info(f"✅ Сессия завершена")
         else:
             logger.info(f"🛑 Сессия прервана")
-        logger.info(f"   📥 Скачано: {downloaded}")
+        logger.info(f"   📥 Скачано: {self.session_downloaded}")
         logger.info(f"   🗜️ Сжато: {self.session_compressed}")
-        logger.info(f"   📤 Загружено: {uploaded}")
+        logger.info(f"   📤 Загружено: {self.session_uploaded}")
         logger.info(f"   ⏭️ Пропущено: {self.session_skipped}")
         return uploaded
 
