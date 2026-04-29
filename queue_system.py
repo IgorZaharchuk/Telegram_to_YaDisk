@@ -1747,7 +1747,7 @@ class QueueSystem:
         logger.info(f"   🗜️ Сжато: {self.session_compressed}")
         logger.info(f"   📤 Загружено: {self.session_uploaded}")
         logger.info(f"   ⏭️ Пропущено: {self.session_skipped}")
-        return uploaded
+        return self.session_uploaded
 
     async def cleanup_all_downloads(self, force: bool = False) -> None:
         """Очищает папку downloads."""
