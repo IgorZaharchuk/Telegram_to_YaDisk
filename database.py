@@ -360,12 +360,24 @@ class DatabaseManager:
             await self.executemany("INSERT OR IGNORE INTO files (chat_id, topic_id, message_id, filename, file_type, size, state, attempts, last_error, file_id, dc_id, timestamp, md5) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", data)
             await self.commit()
         
-        # Всегда пересчитываем chat_stats из реальных данных
+        # Всегда пересчитываем total и total_bytes из реальных данных, не затирая uploaded
         cursor = await self.execute("SELECT COUNT(*), COALESCE(SUM(size), 0) FROM files WHERE chat_id = ?", (chat_id,))
         row = await cursor.fetchone()
         actual_total = row[0]
         actual_bytes = row[1] or 0
-        await self.execute("INSERT OR REPLACE INTO chat_stats (chat_id, total, total_bytes, updated_at) VALUES (?, ?, ?, ?)", (chat_id, actual_total, actual_bytes, time.time()))
+        await self.execute("UPDATE chat_stats SET total = ?, total_bytes = ?, updated_at = ? WHERE chat_id = ?", (actual_total, actual_bytes, time.time(), chat_id))
+        await self.execute("INSERT OR IGNORE INTO chat_stats (chat_id, total, total_bytes, updated_at) VALUES (?, ?, ?, ?)", (chat_id, actual_total, actual_bytes, time.time()))
+        await self.commit()
+        
+        # Всегда пересчитываем total и total_bytes из реальных данных
+        cursor = await self.execute("SELECT COUNT(*), COALESCE(SUM(size), 0) FROM files WHERE chat_id = ?", (chat_id,))
+        row = await cursor.fetchone()
+        actual_total = row[0]
+        actual_bytes = row[1] or 0
+        # Используем UPDATE чтобы не затереть uploaded и другие счётчики
+        await self.execute("UPDATE chat_stats SET total = ?, total_bytes = ?, updated_at = ? WHERE chat_id = ?", (actual_total, actual_bytes, time.time(), chat_id))
+        # Если записи нет — создаём
+        await self.execute("INSERT OR IGNORE INTO chat_stats (chat_id, total, total_bytes, updated_at) VALUES (?, ?, ?, ?)", (chat_id, actual_total, actual_bytes, time.time()))
         await self.commit()
     
     async def update_file_state(self, chat_id: int, message_id: int, state: int) -> bool:
