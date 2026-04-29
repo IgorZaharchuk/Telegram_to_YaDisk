@@ -158,7 +158,8 @@ def retry(max_attempts: int = 3, base_delay: float = 1.0) -> Callable:
                     last_error = e
                     if attempt < max_attempts - 1:
                         delay: float = base_delay * (2 ** attempt)
-                        logger.warning(f"⚠️ Попытка {attempt + 1}/{max_attempts} не удалась: {e}, повтор через {delay:.1f}с")
+                        err_msg = str(e) if str(e) else type(e).__name__
+                        logger.warning(f"⚠️ Попытка {attempt + 1}/{max_attempts} не удалась: {err_msg}, повтор через {delay:.1f}с")
                         await asyncio.sleep(delay)
             raise last_error
         return wrapper
@@ -408,7 +409,8 @@ class YandexUploader:
                 
         except Exception as e:
             self.stats['failed_uploads'] += 1
-            logger.error(f"❌ Ошибка загрузки {filename}: {e}")
+            err_msg = str(e) if str(e) else type(e).__name__
+            logger.error(f"❌ Ошибка загрузки {filename}: {err_msg}")
             return UploadResult(
                 success=False, status='error', remote_path=remote_path, local_path=local_path,
                 filename=filename, size=file_size, md5=local_md5, existed=False,

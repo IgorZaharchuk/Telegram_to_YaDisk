@@ -278,6 +278,44 @@ class FFmpegRunner:
 class Compressor:
     """Класс для сжатия фото и видео."""
     
+    # Рекомендуемые битрейты H.265 (CRF 23) по разрешениям
+    _TARGET_BITRATE_MAP = {
+        '4k': 20_000_000,    # 3840×2160
+        '1080p': 6_000_000,  # 1920×1080
+        '720p': 3_000_000,   # 1280×720
+        'sd': 1_500_000,     # всё что меньше
+    }
+    
+    @staticmethod
+    def _estimate_savings(info: VideoInfo, file_size: int) -> Tuple[float, str]:
+        """Оценка экономии от сжатия в H.265 на основе битрейта."""
+        if not info or info.duration <= 0:
+            return 0.0, "нет метаданных"
+        
+        # Уже в H.265/HEVC/AV1/VP9 — почти нет смысла
+        if info.is_efficient:
+            return 5.0, f"кодек {info.codec}"
+        
+        current_br = (file_size * 8) / info.duration
+        pixels = info.width * info.height
+        
+        if pixels >= 3840 * 2160:
+            target_br = Compressor._TARGET_BITRATE_MAP['4k']
+        elif pixels >= 1920 * 1080:
+            target_br = Compressor._TARGET_BITRATE_MAP['1080p']
+        elif pixels >= 1280 * 720:
+            target_br = Compressor._TARGET_BITRATE_MAP['720p']
+        else:
+            target_br = Compressor._TARGET_BITRATE_MAP['sd']
+        
+        if current_br <= target_br * 0.8:
+            return 5.0, f"битрейт {current_br/1e6:.1f} Mbps уже низкий"
+        
+        # Теоретическая экономия с поправкой 0.7 (H.265 не идеален)
+        ratio = target_br / current_br
+        savings = max(0.0, (1.0 - ratio) * 70.0)
+        return savings, f"{current_br/1e6:.1f}→{target_br/1e6:.1f} Mbps"
+    
     def __init__(self, config: Optional[dict] = None) -> None:
         """Инициализирует компрессор."""
         self.config: dict = config or {}
@@ -643,6 +681,21 @@ class Compressor:
                 decision=f"Видео уже в эффективном кодеке ({info.codec})",
                 duration_sec=time.time() - start, video_info=info.to_dict(),
                 was_compressed=False, should_compress=False)
+        
+        # Оценка эффективности сжатия для файлов > 50MB
+        if info and size_mb >= 50:
+            est, reason = self._estimate_savings(info, original_size)
+            if est < 10:
+                self.stats['skipped_small'] += 1
+                logger.info(f"🎬 [{filename}] ⏭️ Сжатие неэффективно: {reason} (~{est:.0f}%)")
+                return CompressionResult(
+                    success=True, original_path=file_path, compressed_path=file_path,
+                    original_size=original_size, compressed_size=original_size,
+                    saved_bytes=0, saved_percent=0, compression_type='none',
+                    decision=f"Оценка: {reason}",
+                    duration_sec=time.time() - start, video_info=info.to_dict(),
+                    was_compressed=False, should_compress=True)
+            logger.info(f"🎬 [{filename}] 📊 Оценка: {reason} (~{est:.0f}%)")
         
         if info and info.duration < self.min_video_duration:
             self.stats['skipped_short'] += 1

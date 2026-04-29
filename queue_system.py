@@ -34,8 +34,8 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 STUCK_TASK_TIMEOUT = 1800  # 30 минут — задача считается зависшей
-WORKER_SPAWN_DELAY = 0.1   # Задержка между созданием воркеров
-POOL_MAINTAIN_INTERVAL = 2 # Интервал проверки пула
+WORKER_SPAWN_DELAY = 0.5   # Задержка между созданием воркеров (увеличена для снижения холостых запусков)
+POOL_MAINTAIN_INTERVAL = 3 # Интервал проверки пула (увеличен для стабильности)
 MONITOR_INTERVAL = 10      # Интервал мониторинга ресурсов
 CHECKPOINT_INTERVAL = 300  # Интервал checkpoint БД
 
@@ -222,8 +222,9 @@ class WorkerPool:
         """Запускает один воркер для обработки одной задачи."""
         logger.debug(f"🚀 Воркер {worker_id} запущен")
         try:
-            await self.worker_factory(worker_id)
-            self._processed_count += 1
+            result = await self.worker_factory(worker_id)
+            if result:  # Считаем только результативные запуски
+                self._processed_count += 1
         except asyncio.CancelledError:
             logger.debug(f"🛑 Воркер {worker_id} отменен")
         except Exception as e:
@@ -545,11 +546,16 @@ class FileProcessor:
 
             chat_name, topic_name = await self._get_names(item)
 
+            last_update = [0.0]
+            
             async def dl_progress(percent, current, total):
-                await self._update_progress(item.key, {
-                    'stage': 'download', 'progress': percent,
-                    'downloaded': current, 'total_size': total
-                })
+                now = time.time()
+                if percent - last_update[0] >= 5 or percent >= 99 or now - last_update[0] > 1.0:
+                    last_update[0] = percent if percent < 99 else now
+                    await self._update_progress(item.key, {
+                        'stage': 'download', 'progress': percent,
+                        'downloaded': current, 'total_size': total
+                    })
 
             result = await self.tg.download(item.message, progress_callback=dl_progress)
 
@@ -740,12 +746,18 @@ class FileProcessor:
                     )
                     raise Exception("Invalid/corrupted video file")
 
-            def up_progress(current, total):
+            last_update = [0.0]  # mutable для замыкания
+            
+            async def up_progress(current, total):
                 percent = (current / total * 100) if total > 0 else 0
-                asyncio.create_task(self._update_progress(item.key, {
-                    'stage': 'upload', 'progress': percent,
-                    'uploaded': current, 'total_size': total
-                }))
+                # Обновляем прогресс не чаще раза в секунду
+                now = time.time()
+                if percent - last_update[0] >= 5 or percent >= 99 or now - last_update[0] > 1.0:
+                    last_update[0] = percent if percent < 99 else now
+                    await self._update_progress(item.key, {
+                        'stage': 'upload', 'progress': percent,
+                        'uploaded': current, 'total_size': total
+                    })
 
             result = await self.ya.upload(
                 local_path=path,
@@ -1072,55 +1084,57 @@ class QueueSystem:
             logger.warning("⚠️ Яндекс.Диск отвалился, переподключаю...")
             await self.ya.reconnect()
 
-    async def _run_check_worker(self, worker_id: str) -> None:
+    async def _run_check_worker(self, worker_id: str) -> bool:
         """Одноразовый воркер проверки существования на Яндекс.Диске."""
         await self._ensure_ya_connected()
         item = await self._get_next_atomic(FileStatus.PENDING_CHECK, worker_id, 'check')
         if not item:
-            return
-        await self.processor.check(item, worker_id)
+            return False
+        return await self.processor.check(item, worker_id)
 
-    async def _run_download_worker(self, worker_id: str) -> None:
+    async def _run_download_worker(self, worker_id: str) -> bool:
         """Одноразовый воркер скачивания из Telegram."""
         await self._ensure_tg_connected()
         item = await self._get_next_atomic(FileStatus.PENDING_DOWNLOAD, worker_id, 'download')
         if not item:
-            return
+            return False
 
         try:
-            await self.processor.download(item, worker_id)
+            return await self.processor.download(item, worker_id)
         except asyncio.CancelledError:
             await self.processor.cleanup_partial(item)
             raise
 
-    async def _run_compress_photo_worker(self, worker_id: str) -> None:
+    async def _run_compress_photo_worker(self, worker_id: str) -> bool:
         """Одноразовый воркер сжатия фото."""
         item = await self._get_next_atomic(
             FileStatus.PENDING_COMPRESS, worker_id, 'compress_photo', 'photo'
         )
         if not item:
-            return
-        await self.processor.compress(item, worker_id)
+            return False
+        return await self.processor.compress(item, worker_id)
 
-    async def _run_compress_video_worker(self, worker_id: str) -> None:
+    async def _run_compress_video_worker(self, worker_id: str) -> bool:
         """Одноразовый воркер сжатия видео."""
         item = await self._get_next_atomic(
             FileStatus.PENDING_COMPRESS, worker_id, 'compress_video', 'video'
         )
         if not item:
-            return
-        await self.processor.compress(item, worker_id)
+            return False
+        return await self.processor.compress(item, worker_id)
 
-    async def _run_upload_worker(self, worker_id: str) -> None:
+    async def _run_upload_worker(self, worker_id: str) -> bool:
         """Одноразовый воркер загрузки на Яндекс.Диск."""
         await self._ensure_ya_connected()
         item = await self._get_next_atomic(FileStatus.PENDING_UPLOAD, worker_id, 'upload')
         if not item:
-            return
+            return False
 
         if await self.processor.upload(item, worker_id):
             await self._complete_item(item, worker_id)
             await self.processor.cleanup(item)
+            return True
+        return False
 
     # =========================================================================
     # ВОССТАНОВЛЕНИЕ ПОСЛЕ КРАША
