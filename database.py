@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 Единый модуль работы с базой данных SQLite
-ВЕРСИЯ 0.18.1 — _write_lock ДЛЯ ВСЕХ ТРАНЗАКЦИЙ, COUNT(DISTINCT), SESSION_STATS
+ВЕРСИЯ 0.18.2 — _write_lock ДЛЯ ВСЕХ ТРАНЗАКЦИЙ, COUNT(DISTINCT), SESSION_STATS
 """
 
-__version__ = "0.18.1"
+__version__ = "0.18.2"
 
 import os
 import json
@@ -15,6 +15,7 @@ import re
 from pathlib import Path
 from typing import Optional, Dict, List, Any, Tuple, Set, Callable, Awaitable
 
+import sqlite3
 import aiosqlite
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,8 @@ CREATE INDEX IF NOT EXISTS idx_files_state ON files(state);
 CREATE INDEX IF NOT EXISTS idx_files_chat_topic ON files(chat_id, topic_id);
 CREATE INDEX IF NOT EXISTS idx_queue_status ON queue_items(status);
 CREATE INDEX IF NOT EXISTS idx_queue_created ON queue_items(created_at);
+CREATE INDEX IF NOT EXISTS idx_queue_chat_msg ON queue_items(chat_id, message_id);
+CREATE INDEX IF NOT EXISTS idx_files_chat_msg_state ON files(chat_id, message_id, state);
 CREATE INDEX IF NOT EXISTS idx_history_timestamp ON history(timestamp);
 CREATE INDEX IF NOT EXISTS idx_history_chat ON history(chat_id);
 """
@@ -228,7 +231,9 @@ class DatabaseManager:
                 await self._db.execute("PRAGMA foreign_keys = ON;")
                 await self._db.execute("PRAGMA journal_mode=WAL;")
                 await self._db.execute("PRAGMA synchronous=NORMAL;")
-                await self._db.execute("PRAGMA busy_timeout=5000;")
+                await self._db.execute("PRAGMA busy_timeout=15000;")
+                await self._db.execute("PRAGMA cache_size=-8000;")
+                await self._db.execute("PRAGMA temp_store=MEMORY;")
                 await self._db.executescript(DB_SCHEMA)
                 await self._db.commit()
                 await self._migrate_schema()
@@ -333,10 +338,24 @@ class DatabaseManager:
         return await self.get_files(chat_id, topic_id, STATE_SELECTED)
     
     async def add_files(self, chat_id: int, topic_id: int, files_info: List[dict], topic_name: Optional[str] = None) -> None:
-        """Добавляет информацию о файлах в БД."""
+        """Добавляет информацию о файлах в БД с защитой от дубликатов."""
         if topic_name:
             await self.execute("INSERT OR IGNORE INTO topics (chat_id, topic_id, topic_name) VALUES (?, ?, ?)", (chat_id, topic_id, topic_name))
-        data: List[tuple] = [(chat_id, topic_id, f['message_id'], f['filename'], f.get('type', 'document'), f.get('size', 0), f.get('state', STATE_UNLOADED), 0, "", f.get('file_id'), f.get('dc_id'), f.get('timestamp', time.time()), f.get('md5', None)) for f in files_info]
+        
+        # Проверяем существующие ID чтобы не добавлять дубликаты
+        msg_ids = [f['message_id'] for f in files_info]
+        placeholders = ','.join('?' * len(msg_ids))
+        cursor = await self.execute(
+            f"SELECT message_id FROM files WHERE chat_id = ? AND message_id IN ({placeholders})",
+            [chat_id] + msg_ids
+        )
+        existing_ids = {row['message_id'] for row in await cursor.fetchall()}
+        
+        data: List[tuple] = []
+        for f in files_info:
+            if f['message_id'] not in existing_ids:
+                data.append((chat_id, topic_id, f['message_id'], f['filename'], f.get('type', 'document'), f.get('size', 0), f.get('state', STATE_UNLOADED), 0, "", f.get('file_id'), f.get('dc_id'), f.get('timestamp', time.time()), f.get('md5', None)))
+        
         if data:
             await self.executemany("INSERT OR IGNORE INTO files (chat_id, topic_id, message_id, filename, file_type, size, state, attempts, last_error, file_id, dc_id, timestamp, md5) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", data)
             await self.commit()
@@ -353,18 +372,44 @@ class DatabaseManager:
         await self.commit()
         return cursor.rowcount > 0
     
-    async def _with_transaction(self, operation: Callable[[aiosqlite.Connection], Awaitable[Any]]) -> Any:
-        """Выполняет операцию в транзакции."""
-        async with self._write_lock:
-            db: aiosqlite.Connection = await self.get_connection()
-            await db.execute("BEGIN IMMEDIATE")
+    async def _with_transaction(self, operation: Callable[[aiosqlite.Connection], Awaitable[Any]], max_retries: int = 5) -> Any:
+        """Выполняет операцию в транзакции с retry при блокировках."""
+        last_error = None
+        for attempt in range(max_retries):
             try:
-                result: Any = await operation(db)
-                await db.commit()
-                return result
-            except Exception as e:
-                await db.rollback()
+                async with self._write_lock:
+                    db: aiosqlite.Connection = await self.get_connection()
+                    try:
+                        await db.execute("BEGIN IMMEDIATE")
+                    except Exception:
+                        pass
+                    try:
+                        result: Any = await operation(db)
+                        try:
+                            await db.commit()
+                        except Exception:
+                            pass
+                        return result
+                    except Exception as e:
+                        try:
+                            await db.rollback()
+                        except Exception:
+                            pass
+                        raise
+            except (sqlite3.OperationalError, aiosqlite.OperationalError) as e:
+                last_error = e
+                if 'locked' in str(e).lower() or 'busy' in str(e).lower():
+                    if attempt < max_retries - 1:
+                        delay = 0.1 * (2 ** attempt)
+                        logger.debug(f"🔄 БД занята, повтор через {delay:.2f}с (попытка {attempt+1}/{max_retries})")
+                        import asyncio as _asyncio
+                        await _asyncio.sleep(delay)
+                        continue
                 raise
+            except Exception as e:
+                last_error = e
+                raise
+        raise last_error or Exception("Max retries exceeded for DB transaction")
     
     async def select_topic(self, chat_id: int, topic_id: int) -> None:
         """Выбирает тему для загрузки."""
@@ -504,7 +549,13 @@ class DatabaseManager:
         return True
     
     async def get_queue_item(self, key: str) -> Optional[dict]:
-        """Возвращает элемент очереди по ключу."""
+        """Возвращает элемент очереди по ключу (None если нет)."""
+        try:
+            cursor: aiosqlite.Cursor = await self.execute("SELECT 1 FROM queue_items WHERE key = ? LIMIT 1", (key,))
+            if not await cursor.fetchone():
+                return None
+        except Exception:
+            return None
         cursor: aiosqlite.Cursor = await self.execute("SELECT * FROM queue_items WHERE key = ?", (key,))
         row: Optional[aiosqlite.Row] = await cursor.fetchone()
         if not row:
@@ -555,7 +606,7 @@ class DatabaseManager:
         await self.commit()
     
     async def update_queue_item_paths(self, key: str, local_path: Optional[str] = None, compressed_path: Optional[str] = None, file_size: Optional[int] = None) -> None:
-        """Обновляет пути и размер элемента очереди."""
+        """Атомарно обновляет пути и размер элемента очереди."""
         updates: List[str] = []
         params: List[Any] = []
         if local_path is not None:
@@ -571,8 +622,9 @@ class DatabaseManager:
             updates.append("updated_at = ?")
             params.append(time.time())
             params.append(key)
-            await self.execute(f"UPDATE queue_items SET {', '.join(updates)} WHERE key = ?", tuple(params))
-            await self.commit()
+            async def do_update(db_conn):
+                await db_conn.execute(f"UPDATE queue_items SET {', '.join(updates)} WHERE key = ?", tuple(params))
+            await self._with_transaction(do_update)
     
     async def delete_queue_item(self, key: str) -> None:
         """Удаляет элемент из очереди."""

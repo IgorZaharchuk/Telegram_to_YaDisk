@@ -379,7 +379,6 @@ Environment="USER=$(whoami)"
 ExecStart=$HOME/Telegram_to_YaDisk/run_bot.sh
 Restart=always
 RestartSec=10
-StandardOutput=append:$HOME/Telegram_to_YaDisk/logs/bot.log
 StandardError=append:$HOME/Telegram_to_YaDisk/logs/bot_error.log
 SyslogIdentifier=tg2ya-bot
 

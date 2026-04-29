@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 Система очередей - ОДНОРАЗОВЫЕ ВОРКЕРЫ, АТОМАРНЫЙ ЗАХВАТ, ВАЛИДАЦИЯ
-ВЕРСИЯ 0.18.1 — SESSION_SKIPPED/COMPRESSED/ERRORS, КЭШ COUNTS, BATCH ЛИМИТ, ВЫВОД ЛОГА
+ВЕРСИЯ 0.18.2 — SESSION_SKIPPED/COMPRESSED/ERRORS, КЭШ COUNTS, BATCH ЛИМИТ, ВЫВОД ЛОГА
 """
 
-__version__ = "0.18.1"
+__version__ = "0.18.2"
 
 import os
 import asyncio
@@ -500,8 +500,7 @@ class FileProcessor:
                     filename=item.filename, size=item.file_size, reason="already_uploaded",
                     topic_id=item.topic_id, chat_name=await self._get_chat_name(item.chat_id),
                     topic_name=await self._get_topic_name(item.chat_id, item.topic_id) if item.topic_id else None)
-                self.qs.session_skipped += 1
-                await self.qs._complete_item(item)
+                await self.qs._complete_item(item, worker_id)
                 logger.info(f"⏭️ Пропущен (уже загружен): {item.filename}")
                 return False
             
@@ -516,15 +515,15 @@ class FileProcessor:
                 )
                 await self.db.update_file_state(item.chat_id, item.message_id, STATE_SKIPPED)
                 self.qs.session_skipped += 1
-                await self.qs._complete_item(item)
+                await self.qs._complete_item(item, worker_id)
                 logger.info(f"⏭️ Пропущен (уже на диске): {item.filename}")
                 return False
 
-            await self.qs._update_item(item, FileStatus.PENDING_DOWNLOAD)
+            await self.qs._update_item(item, FileStatus.PENDING_DOWNLOAD, worker_id=worker_id)
             logger.info(f"🔍→📥 {item.filename}")
             return True
         except Exception as e:
-            await self.qs._fail_item(item, str(e))
+            await self.qs._fail_item(item, str(e), worker_id)
             return False
 
     async def download(self, item: QueueItem, worker_id: str) -> bool:
@@ -535,7 +534,8 @@ class FileProcessor:
             if exists and size > 0:
                 logger.info(f"⏭️ Файл уже на диске, пропускаем скачивание: {item.filename}")
                 await self.db.update_file_state(item.chat_id, item.message_id, STATE_SKIPPED)
-                await self.qs._complete_item(item)
+                self.qs.session_skipped += 1
+                await self.qs._complete_item(item, worker_id)
                 return True
 
             if item.message is None:
@@ -586,12 +586,12 @@ class FileProcessor:
                 if await self._needs_compress(item.filename, item.file_size)
                 else FileStatus.PENDING_UPLOAD
             )
-            await self.qs._update_item(item, next_status)
+            await self.qs._update_item(item, next_status, worker_id=worker_id)
             logger.info(f"📥 Скачан: {item.filename} ({fmt_size(item.file_size)})")
             return True
 
         except Exception as e:
-            await self.qs._fail_item(item, str(e))
+            await self.qs._fail_item(item, str(e), worker_id)
             return False
 
     async def compress(self, item: QueueItem, worker_id: str) -> bool:
@@ -605,7 +605,8 @@ class FileProcessor:
             if exists and size > 0:
                 logger.info(f"⏭️ Файл уже на диске, пропускаем сжатие: {item.filename}")
                 await self.db.update_file_state(item.chat_id, item.message_id, STATE_SKIPPED)
-                await self.qs._complete_item(item)
+                self.qs.session_skipped += 1
+                await self.qs._complete_item(item, worker_id)
                 return True
 
             if not os.path.exists(item.local_path):
@@ -655,10 +656,9 @@ class FileProcessor:
                         f"(экономия {result.saved_percent:.1f}%)"
                     )
                     item.compressed_path = result.compressed_path
-                    try:
-                        await self.db.update_queue_item_paths(
-                            item.key, compressed_path=result.compressed_path)
-                        await self.db.record_compressed(
+                    await self.db.update_queue_item_paths(
+                        item.key, compressed_path=result.compressed_path)
+                    await self.db.record_compressed(
                         chat_id=item.chat_id, message_id=item.message_id,
                         filename=item.filename,
                         original_size=result.original_size,
@@ -666,8 +666,6 @@ class FileProcessor:
                         compression_type=result.compression_type,
                         topic_id=item.topic_id, chat_name=chat_name, topic_name=topic_name
                     )
-                    except Exception:
-                        pass  # БД занята — не критично для сжатия
             elif result.success and not result.was_compressed:
                 logger.info(
                     f"{'🎬' if is_video else '📸'} {item.filename} "
@@ -687,7 +685,7 @@ class FileProcessor:
                 )
                 item.compressed_path = item.local_path
 
-            await self.qs._update_item(item, FileStatus.PENDING_UPLOAD)
+            await self.qs._update_item(item, FileStatus.PENDING_UPLOAD, worker_id=worker_id)
             return True
 
         except Exception as e:
@@ -702,7 +700,7 @@ class FileProcessor:
                 topic_id=item.topic_id, chat_name=chat_name, topic_name=topic_name
             )
             item.compressed_path = item.local_path
-            await self.qs._update_item(item, FileStatus.PENDING_UPLOAD)
+            await self.qs._update_item(item, FileStatus.PENDING_UPLOAD, worker_id=worker_id)
             return True
 
     async def upload(self, item: QueueItem, worker_id: str) -> bool:
@@ -773,7 +771,7 @@ class FileProcessor:
             raise Exception(result.error)
 
         except Exception as e:
-            await self.qs._fail_item(item, str(e))
+            await self.qs._fail_item(item, str(e), worker_id)
             return False
 
 
@@ -900,33 +898,64 @@ class QueueSystem:
         await self.db.remove_processing(key)
 
     async def _update_item(self, item: QueueItem, new_status: Optional[FileStatus] = None,
-                           release: bool = True) -> None:
-        """Обновляет статус элемента."""
-        if new_status:
-            item.status = new_status
-            await self.db.update_queue_status(
-                item.key, new_status.value, item.attempts, item.last_error
-            )
-        item.updated_at = time.time()
-        if release:
-            await self._release_item(item.key)
-
-    async def _complete_item(self, item: QueueItem) -> None:
-        """Завершает обработку элемента."""
+                           release: bool = True, worker_id: str = None) -> None:
+        """Обновляет статус элемента с проверкой владения."""
         async def op(db_conn):
-            await db_conn.execute("DELETE FROM queue_items WHERE key = ?", (item.key,))
-            await db_conn.execute("DELETE FROM queue_retry WHERE key = ?", (item.key,))
-            await db_conn.execute("DELETE FROM active_progress WHERE key = ?", (item.key,))
-            await db_conn.execute("DELETE FROM queue_processing WHERE key = ?", (item.key,))
+            # Проверяем, что элемент всё ещё принадлежит этому воркеру
+            if worker_id and release:
+                cursor = await db_conn.execute(
+                    "SELECT worker_id FROM queue_processing WHERE key = ?", (item.key,)
+                )
+                row = await cursor.fetchone()
+                if row and row['worker_id'] != worker_id:
+                    return  # Не наш элемент — не трогаем
+            if new_status:
+                item.status = new_status
+                await db_conn.execute(
+                    "UPDATE queue_items SET status = ?, attempts = ?, last_error = ?, updated_at = ? WHERE key = ?",
+                    (item.status.value, item.attempts, item.last_error, time.time(), item.key)
+                )
+            item.updated_at = time.time()
+            if release and worker_id:
+                await db_conn.execute(
+                    "DELETE FROM queue_processing WHERE key = ? AND worker_id = ?",
+                    (item.key, worker_id)
+                )
         await self.db._with_transaction(op)
 
-    async def _fail_item(self, item: QueueItem, error: str) -> None:
-        """Обрабатывает ошибку элемента с полной очисткой."""
+    async def _complete_item(self, item: QueueItem, worker_id: str = None) -> None:
+        """Завершает обработку элемента — только если он принадлежит этому воркеру."""
+        async def op(db_conn):
+            # Проверяем владение
+            if worker_id:
+                cursor = await db_conn.execute(
+                    "SELECT worker_id FROM queue_processing WHERE key = ?", (item.key,)
+                )
+                row = await cursor.fetchone()
+                if row and row['worker_id'] != worker_id:
+                    logger.debug(f"🔄 Элемент {item.key} захвачен другим воркером, пропускаем complete")
+                    return
+            await db_conn.execute("DELETE FROM active_progress WHERE key = ?", (item.key,))
+            await db_conn.execute("DELETE FROM queue_retry WHERE key = ?", (item.key,))
+            await db_conn.execute("DELETE FROM queue_processing WHERE key = ?", (item.key,))
+            await db_conn.execute("DELETE FROM queue_items WHERE key = ?", (item.key,))
+        await self.db._with_transaction(op)
+
+    async def _fail_item(self, item: QueueItem, error: str, worker_id: str = None) -> None:
+        """Обрабатывает ошибку элемента с проверкой владения."""
         retry_key: Optional[str] = None
         retry_delay: float = 0.0
 
         async def op(db_conn):
             nonlocal retry_key, retry_delay
+            # Проверяем владение
+            if worker_id:
+                cursor = await db_conn.execute(
+                    "SELECT worker_id FROM queue_processing WHERE key = ?", (item.key,)
+                )
+                row = await cursor.fetchone()
+                if row and row['worker_id'] != worker_id:
+                    return  # Не наш элемент
             await db_conn.execute("DELETE FROM queue_retry WHERE key = ?", (item.key,))
             await db_conn.execute("DELETE FROM active_progress WHERE key = ?", (item.key,))
             await db_conn.execute("DELETE FROM queue_processing WHERE key = ?", (item.key,))
@@ -1088,7 +1117,7 @@ class QueueSystem:
             return
 
         if await self.processor.upload(item, worker_id):
-            await self._complete_item(item)
+            await self._complete_item(item, worker_id)
             await self.processor.cleanup(item)
 
     # =========================================================================
@@ -1355,7 +1384,11 @@ class QueueSystem:
                     'compressed': self.session_compressed,
                     'uploaded': self.session_uploaded,
                     'skipped': self.session_skipped,
-                    'errors': self.session_errors
+                    'errors': self.session_errors,
+                    'total_in_queue': sum(counts.get(s, 0) for s in (
+                        STATUS_PENDING_CHECK, STATUS_PENDING_DOWNLOAD,
+                        STATUS_PENDING_COMPRESS, STATUS_PENDING_UPLOAD
+                    ))
                 })
 
                 if time.time() - last_checkpoint > CHECKPOINT_INTERVAL:
@@ -1377,12 +1410,19 @@ class QueueSystem:
     async def add_file(self, chat_id: int, message_id: int, filename: str,
                        message: Any, remote_dir: str, topic_id: Optional[int] = None,
                        file_info: Optional[dict] = None) -> bool:
-        """Добавляет файл в очередь."""
+        """Добавляет файл в очередь с полной проверкой дубликатов."""
         await self.db.ensure_loaded()
         key = f"{chat_id}:{message_id}"
 
+        # Проверка 1: уже в очереди
         if await self.db.get_queue_item(key):
             logger.debug(f"🔄 Файл {filename} уже в очереди")
+            return False
+        
+        # Проверка 2: уже загружен (смотрим в files, а не queue_items)
+        current_state = await self.db.get_file_state(chat_id, message_id)
+        if current_state == STATE_UPLOADED:
+            logger.debug(f"⏭️ Файл {filename} уже загружен (state=UPLOADED)")
             return False
 
         chat_name = await self.processor._get_chat_name(chat_id)
@@ -1543,7 +1583,7 @@ class QueueSystem:
     # =========================================================================
 
     async def _add_selected_files_batch(self, chat_ids: List[int], limit: int) -> int:
-        """Добавляет пачку выбранных файлов в очередь."""
+        """Добавляет пачку ВЫБРАННЫХ файлов в очередь (без дубликатов)."""
         added = 0
         files_to_check = []
         files_info_map: Dict[str, Tuple[int, dict, dict, str]] = {}
@@ -1557,23 +1597,32 @@ class QueueSystem:
             for topic in await self.db.get_topics(cid):
                 if added >= limit:
                     break
-
+                
+                # Берём только ВЫБРАННЫЕ файлы
                 remaining = limit - added
                 files = await self.db.get_files(
                     cid, topic['topic_id'], state_filter=STATE_SELECTED
                 )
-                files = files[:remaining]
-
-                for file_info in files:
+                
+                # Фильтруем только те, что ещё не в очереди и не загружены
+                for file_info in files[:remaining]:
                     key = f"{cid}:{file_info['message_id']}"
+                    
+                    # Дополнительная проверка state перед добавлением
+                    current_state = await self.db.get_file_state(cid, file_info['message_id'])
+                    if current_state == STATE_UPLOADED:
+                        continue  # Уже загружен
+                        
                     files_to_check.append(key)
                     files_info_map[key] = (cid, topic, file_info, chat_name)
 
         if not files_to_check:
             return 0
 
+        # Пакетная проверка наличия в очереди
         existing_keys = await self.db.are_files_in_queue(files_to_check)
 
+        new_files_count = 0
         for key in files_to_check:
             if added >= limit:
                 break
@@ -1593,8 +1642,11 @@ class QueueSystem:
                 file_info=file_info
             ):
                 added += 1
-                logger.info(f"   ✅ Добавлен: {file_info['filename']}")
+                new_files_count += 1
 
+        if new_files_count > 0:
+            logger.info(f"📊 Добавлено в очередь: {new_files_count} файлов")
+        
         return added
 
     async def _scan_new_files(self, chat_ids: List[int]) -> None:

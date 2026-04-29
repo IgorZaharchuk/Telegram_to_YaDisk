@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 Telegram Bot для управления Backup
-ВЕРСИЯ 0.18.1 — СЕССИОННЫЕ СЧЁТЧИКИ, РАЗДЕЛЕНИЕ МЕНЮ, AIOLIMITER, ФИКСЫ ОТОБРАЖЕНИЯ
+ВЕРСИЯ 0.18.2 — СЕССИОННЫЕ СЧЁТЧИКИ, РАЗДЕЛЕНИЕ МЕНЮ, AIOLIMITER, ФИКСЫ ОТОБРАЖЕНИЯ
 """
 
-__version__ = "0.18.1"
+__version__ = "0.18.2"
 
 import os
 import sys
@@ -65,7 +65,10 @@ console_handler.setLevel(logging.INFO)
 formatter: logging.Formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 file_handler.setFormatter(formatter)
 console_handler.setFormatter(formatter)
-logging.basicConfig(level=logging.INFO, handlers=[file_handler, console_handler])
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.DEBUG)
+root_logger.addHandler(file_handler)
+root_logger.addHandler(console_handler)
 
 for noisy in ("yadisk", "asyncio", "urllib3", "httpcore", "httpx", "aiosqlite"):
     logging.getLogger(noisy).setLevel(logging.ERROR)
@@ -86,6 +89,7 @@ class CancelledErrorFilter(logging.Filter):
 
 logging.getLogger("telegram.ext.Application").addFilter(CancelledErrorFilter())
 logging.getLogger("telegram.ext.Application").setLevel(logging.ERROR)
+
 
 logger = logging.getLogger(__name__)
 logger.info(f"📋 Разрешённые пользователи: {ALLOWED_USERS}")
@@ -718,6 +722,50 @@ def format_active_files(status: dict, context: str = 'main', max_items: Optional
     return lines
 
 
+
+def _format_scan_progress(scan_progress: dict, chat_names: dict) -> str:
+    """Форматирует прогресс сканирования для отображения в меню."""
+    active_scans = {k: v for k, v in scan_progress.items() if not v.get("completed", True)}
+    if not active_scans:
+        return ""
+    
+    lines = ["\n🔄 <b>Идёт сканирование:</b>"]
+    for cid, data in scan_progress.items():
+        display_name = chat_names.get(cid, data.get("chat_name", f"Чат {cid}"))
+        pct = data.get("percent", 0)
+        topic = data.get("current_topic", "")
+        files = data.get("files_found", 0)
+        if data.get("completed"):
+            lines.append(f"  ✅ {display_name}")
+            lines.append(f"     {'▰' * C.PROGRESS_BAR_WIDTH} 100%")
+            lines.append(f"     📊 {files} файлов")
+        else:
+            bar = "▰" * int(C.PROGRESS_BAR_WIDTH * pct / 100) + "▱" * (C.PROGRESS_BAR_WIDTH - int(C.PROGRESS_BAR_WIDTH * pct / 100))
+            lines.append(f"  📁 {display_name}")
+            lines.append(f"     {bar} {pct:.0f}%")
+            if topic and topic != "None":
+                lines.append(f"     📂 {topic[:35]}")
+            lines.append(f"     📊 {files} файлов")
+    return "\n".join(lines)
+
+
+def _format_scan_progress_single(chat_scan: dict, chat_name: str) -> str:
+    """Форматирует прогресс сканирования одного чата."""
+    if not chat_scan or chat_scan.get("completed", True):
+        return ""
+    
+    pct = chat_scan.get("percent", 0)
+    bar = "▰" * int(C.PROGRESS_BAR_WIDTH * pct / 100) + "▱" * (C.PROGRESS_BAR_WIDTH - int(C.PROGRESS_BAR_WIDTH * pct / 100))
+    topic = chat_scan.get("current_topic", "")
+    files_found = chat_scan.get("files_found", 0)
+    
+    text = f"\n🔄 <b>Идёт сканирование...</b>\n{bar} {pct:.0f}%"
+    if topic and topic != "None":
+        text += f"\n📂 {topic[:40]}"
+    if files_found > 0:
+        text += f"\n📊 Найдено: {files_found} файлов"
+    return text
+
 async def _format_main(db: DatabaseManager) -> str:
     """Форматирует главное меню — только сессионные данные."""
     status: dict = await get_cached_bot_status(db)
@@ -765,29 +813,10 @@ async def _format_main(db: DatabaseManager) -> str:
     # Если очередь пуста и main.py работает — проверим, не идёт ли сканирование
     if summary.get("pending", 0) == 0 and is_backup_running():
         scan_progress = await db.get_scan_progress()
-        active_scans = {k: v for k, v in scan_progress.items() if not v.get("completed")}
-        if active_scans:
-            lines.append("")
-            lines.append("🔍 Сканирование чатов...")
-            for cid, data in scan_progress.items():
-                name = data.get("chat_name", f"Чат {cid}")[:30]
-                if data.get("completed"):
-                    new_files = data.get("files_found", 0)
-                    lines.append(f"📁 {name}")
-                    lines.append(f"   [▰▰▰▰▰▰▰▰▰▰▰▰▰] 100%")
-                    if new_files > 0:
-                        lines.append(f"   📊 Найдено файлов: {new_files}")
-                else:
-                    pct = data.get("percent", 0)
-                    bar = "▰" * int(C.PROGRESS_BAR_WIDTH * pct / 100) + "▱" * (C.PROGRESS_BAR_WIDTH - int(C.PROGRESS_BAR_WIDTH * pct / 100))
-                    topic = data.get("current_topic", "")
-                    files_found = data.get("files_found", 0)
-                    lines.append(f"📁 {name}")
-                    lines.append(f"   {bar} {pct:.0f}%")
-                    if topic:
-                        lines.append(f"   📂 {topic[:35]}")
-                    if files_found > 0:
-                        lines.append(f"   📊 Всего файлов: {files_found}")
+        chat_names = {str(cid): await db.get_chat_name(cid) for cid in scan_progress}
+        scan_text = _format_scan_progress(scan_progress, chat_names)
+        if scan_text:
+            lines.append(scan_text)
     return "\n".join(lines)[:C.MAX_MSG_LEN]
 
 
@@ -934,126 +963,6 @@ async def watch_menu(uid: int, bot: Any, menu_name: str, format_func: Callable, 
                 await asyncio.sleep(min(errors * 5, 30))
     except asyncio.CancelledError:
         pass
-
-
-async def monitor_scan_progress(uid: int, bot: Any, msg_id: int, chat_id: Optional[int] = None, chat_name: str = "") -> None:
-    """Мониторит прогресс сканирования."""
-    last_upd: float = 0
-    start_time: float = time.time()
-    timeout: int = 600
-    no_data_timeout: int = 60
-    last_data_time: float = time.time()
-    scan_was_active: bool = False
-    
-    is_full_scan: bool = chat_id is None
-    task_key: str = f"full_scan_{uid}" if is_full_scan else f"scan_{uid}_{chat_id}"
-    title: str = "всех чатов" if is_full_scan else f"чата {chat_name}"
-    
-    renderer: 'MenuRenderer' = MenuRenderer(bot, uid)
-    db: DatabaseManager = await get_db()
-    
-    await asyncio.sleep(2)
-    
-    try:
-        while True:
-            await asyncio.sleep(1)
-            
-            if time.time() - start_time > timeout:
-                await safe_edit(bot, uid, msg_id, f"✅ <b>Сканирование {title} завершено</b> (по таймауту)", is_user_action=False)
-                if is_full_scan:
-                    await renderer.render('chats', msg_id)
-                else:
-                    await renderer.render('chat_manage', msg_id, chat_id=chat_id)
-                break
-            
-            status: dict = await get_cached_bot_status(db)
-            scan_progress: Dict[str, dict] = status.get('scan_progress', {})
-            
-            if is_full_scan:
-                completed: bool = bool(scan_progress) and all(data.get('completed', False) for data in scan_progress.values())
-                has_data: bool = bool(scan_progress)
-            else:
-                chat_data: dict = scan_progress.get(str(chat_id), {})
-                completed = chat_data.get('completed', False)
-                has_data = bool(chat_data)
-            
-            if completed:
-                await asyncio.sleep(1)
-                await safe_edit(bot, uid, msg_id, f"✅ <b>Сканирование {title} завершено!</b>\n\nСписок файлов обновлён.", is_user_action=False)
-                await asyncio.sleep(2)
-                if is_full_scan:
-                    await renderer.render('chats', msg_id)
-                else:
-                    await renderer.render('chat_manage', msg_id, chat_id=chat_id)
-                return
-            
-            if scan_was_active and not has_data:
-                await asyncio.sleep(1)
-                await safe_edit(bot, uid, msg_id, f"✅ <b>Сканирование {title} завершено!</b>\n\nСписок файлов обновлён.", is_user_action=False)
-                await asyncio.sleep(2)
-                if is_full_scan:
-                    await renderer.render('chats', msg_id)
-                else:
-                    await renderer.render('chat_manage', msg_id, chat_id=chat_id)
-                return
-            
-            if not has_data:
-                if time.time() - last_data_time > no_data_timeout:
-                    await safe_edit(bot, uid, msg_id, f"✅ <b>Сканирование {title} завершено</b> (таймаут ожидания данных)", is_user_action=False)
-                    if is_full_scan:
-                        await renderer.render('chats', msg_id)
-                    else:
-                        await renderer.render('chat_manage', msg_id, chat_id=chat_id)
-                    break
-                continue
-            
-            scan_was_active = True
-            last_data_time = time.time()
-            
-            now: float = time.time()
-            if now - last_upd >= 2:
-                last_upd = now
-                
-                if not is_backup_running():
-                    await asyncio.sleep(1)
-                    total: int = sum(data.get('files_found', 0) for data in scan_progress.values()) if is_full_scan else chat_data.get('files_found', 0)
-                    await send_temp_message(bot, uid, f"✅ <b>Сканирование {title} завершено!</b>\n\n📊 Найдено файлов: {total}", delay=2)
-                    await asyncio.sleep(2)
-                    if is_full_scan:
-                        await renderer.render('chats', msg_id)
-                    else:
-                        await renderer.render('chat_manage', msg_id, chat_id=chat_id)
-                    break
-                
-                if is_full_scan:
-                    lines = [f"🔄 <b>Полное сканирование {title}</b>\n"]
-                    for cid, data in scan_progress.items():
-                        cname: str = data.get('chat_name', f'Чат {cid}')
-                        percent: float = data.get('percent', 0)
-                        files_found: int = data.get('files_found', 0)
-                        if data.get('completed'):
-                            bar: str = "▰" * C.PROGRESS_BAR_WIDTH
-                            lines.append(f"   ✅ {cname[:30]}: {bar} 100%")
-                        else:
-                            bar = "▰" * int(C.PROGRESS_BAR_WIDTH * percent / 100) + "▱" * (C.PROGRESS_BAR_WIDTH - int(C.PROGRESS_BAR_WIDTH * percent / 100))
-                            lines.append(f"   {cname[:30]}: {bar} {percent:.0f}%")
-                        lines.append(f"      📊 {files_found} файлов")
-                    text = "\n".join(lines)
-                else:
-                    percent = chat_data.get('percent', 0)
-                    files_found = chat_data.get('files_found', 0)
-                    current_topic: str = chat_data.get('current_topic', '')
-                    bar = "▰" * int(C.PROGRESS_BAR_WIDTH * percent / 100) + "▱" * (C.PROGRESS_BAR_WIDTH - int(C.PROGRESS_BAR_WIDTH * percent / 100))
-                    text = f"🔄 <b>Сканирование чата</b>\n📁 {chat_name}\n{bar} {percent:.0f}%\n📊 Найдено: {files_found} файлов"
-                    if current_topic:
-                        text += f"\n📂 Тема: {current_topic[:40]}"
-                
-                await safe_edit(bot, uid, msg_id, text, is_user_action=False)
-                
-    except asyncio.CancelledError:
-        pass
-    finally:
-        await _bot_state.pop_watcher_task(task_key)
 
 
 class MenuRenderer:
@@ -1304,6 +1213,12 @@ class MenuRenderer:
                 line += f" 🗜️{compressed}/{fmt_size(saved_bytes)}"
             lines.append(line)
         
+        if is_backup_running():
+            scan_progress = await db.get_scan_progress()
+            scan_text = _format_scan_progress(scan_progress, chat_names)
+            if scan_text:
+                lines.append(scan_text)
+        
         kb = [[Keyboard._btn(f"📁 {chat_names.get(str(cid), f'Chat {cid}')}", f"chat_manage:{cid}")] 
               for cid in chat_ids]
         if not is_backup_running():
@@ -1356,6 +1271,13 @@ class MenuRenderer:
             text += f"⬜ Не скачано: {unloaded}\n"
         if errors > 0:
             text += f"❌ Ошибок: {errors}\n"
+        
+        if is_backup_running():
+            scan_progress = await db.get_scan_progress()
+            chat_scan = scan_progress.get(str(chat_id), {})
+            scan_text = _format_scan_progress_single(chat_scan, name)
+            if scan_text:
+                text += scan_text
         
         kb: List[List[InlineKeyboardButton]] = []
         if total > 0:
@@ -1703,20 +1625,55 @@ async def handle_refresh_cache(uid: int, bot: Any, chat_id: int, edit_id: Option
     db: DatabaseManager = await get_db()
     status: dict = await get_cached_bot_status(db)
     name: str = status.get('chat_names', {}).get(str(chat_id), f"Chat {chat_id}")
-    msg_id: Optional[int] = await safe_edit_or_send(bot, uid, edit_id, f"🔄 <b>Начинаю полное сканирование чата {name}...</b>\n\n⏳ Подготовка...", Keyboard.back(f"chat_manage:{chat_id}"), is_user_action=True)
-    if msg_id:
-        await _bot_state.set_watcher_task(f"scan_{uid}_{chat_id}", asyncio.create_task(monitor_scan_progress(uid, bot, msg_id, chat_id, name)))
-    subprocess.Popen([sys.executable, "main.py", "--scan-only", "--full-scan", f"--chat-id={chat_id}"],
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    subprocess.Popen([sys.executable, "main.py", "--scan-only", "--full-scan", f"--chat-id={chat_id}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    await asyncio.sleep(1)
+    await show_chat_manage(uid, bot, chat_id, edit_id)
+    async def watch_scan():
+        db = await get_db()
+        last_text = ""
+        for _ in range(120):
+            await asyncio.sleep(5)
+            sp = await db.get_scan_progress()
+            chat_scan = sp.get(str(chat_id), {})
+            if chat_scan.get('completed', True) or not is_backup_running():
+                break
+            renderer = MenuRenderer(bot, uid)
+            text, kb = await renderer._render_chat_manage(chat_id=chat_id)
+            if text != last_text:
+                last_text = text
+                msg_id = await _bot_state.get_msg(uid)
+                if msg_id:
+                    await safe_edit(bot, uid, msg_id, text, kb, is_user_action=False)
+        # Не создаём новое сообщение — отредактируем текущее когда завершится
+    asyncio.create_task(watch_scan())
 
 
 async def handle_refresh_all_cache(uid: int, bot: Any, edit_id: Optional[int] = None, callback: Optional[Any] = None) -> None:
     """Обновляет кэш всех чатов."""
-    msg_id: Optional[int] = await safe_edit_or_send(bot, uid, edit_id, "🔄 <b>Начинаю полное сканирование всех чатов...</b>\n\n⏳ Подготовка...", Keyboard.back("chats"), is_user_action=True)
-    if msg_id:
-        await _bot_state.set_watcher_task(f"full_scan_{uid}", asyncio.create_task(monitor_scan_progress(uid, bot, msg_id, chat_id=None)))
-    subprocess.Popen([sys.executable, "main.py", "--scan-only", "--full-scan"],
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    subprocess.Popen([sys.executable, "main.py", "--scan-only", "--full-scan"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    await asyncio.sleep(1)
+    await show_chats(uid, bot, edit_id)
+    async def watch_scan_all():
+        db = await get_db()
+        last_text = ""
+        for _ in range(120):
+            await asyncio.sleep(5)
+            sp = await db.get_scan_progress()
+            if all(d.get('completed', False) for d in sp.values()) or not is_backup_running():
+                break
+            renderer = MenuRenderer(bot, uid)
+            text, kb = await renderer._render_chats()
+            if text != last_text:
+                last_text = text
+                msg_id = await _bot_state.get_msg(uid)
+                if msg_id:
+                    await safe_edit(bot, uid, msg_id, text, kb, is_user_action=False)
+        renderer = MenuRenderer(bot, uid)
+        text, kb = await renderer._render_chats()
+        msg_id = await _bot_state.get_msg(uid)
+        if msg_id:
+            await safe_edit(bot, uid, msg_id, text, kb, is_user_action=False)
+    asyncio.create_task(watch_scan_all())
 
 
 async def handle_remove_chat(uid: int, bot: Any, chat_id: int, edit_id: Optional[int] = None, callback: Optional[Any] = None) -> None:
