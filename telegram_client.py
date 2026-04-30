@@ -694,7 +694,8 @@ class TelegramDownloader:
         logger.debug(f"   Существующих файлов: {len(existing_ids)}")
         
         messages: List[Message] = await self._scan_chat(chat_id, 'incremental', progress_callback, existing_ids)
-        new_messages: List[Message] = [m for m in messages if m.id not in existing_ids and self._has_file(m)]
+        # _scan_chat уже проверил _has_file, но не все id могли отфильтроваться при раннем выходе
+        new_messages: List[Message] = [m for m in messages if m.id not in existing_ids]
         
         if not new_messages:
             logger.info(f"✅ Новых файлов в чате {chat_id} не найдено")
