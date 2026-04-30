@@ -505,6 +505,15 @@ class FileProcessor:
                 logger.info(f"⏭️ Пропущен (уже загружен): {item.filename}")
                 return False
             
+            # Если есть сжатый файл с прошлой попытки — используем его
+            if item.compressed_path and os.path.exists(item.compressed_path):
+                compressed_size = os.path.getsize(item.compressed_path)
+                if compressed_size > 0:
+                    logger.info(f"📦 Найден сжатый файл с прошлой попытки: {item.filename} ({fmt_size(compressed_size)})")
+                    item.file_size = compressed_size
+                    await self.qs._update_item(item, FileStatus.PENDING_UPLOAD, worker_id=worker_id)
+                    return True
+            
             chat_name, topic_name = await self._get_names(item)
             exists, size, _ = await self.ya.file_exists(item.remote_dir, item.filename)
 
@@ -973,6 +982,13 @@ class QueueSystem:
             await db_conn.execute("DELETE FROM queue_retry WHERE key = ?", (item.key,))
             await db_conn.execute("DELETE FROM active_progress WHERE key = ?", (item.key,))
             await db_conn.execute("DELETE FROM queue_processing WHERE key = ?", (item.key,))
+            
+            # Сохраняем сжатый файл для повторных попыток
+            if item.compressed_path and os.path.exists(item.compressed_path):
+                await db_conn.execute(
+                    "UPDATE queue_items SET compressed_path = ? WHERE key = ?",
+                    (item.compressed_path, item.key)
+                )
 
             if not item.is_retryable_error(error):
                 item.attempts = item.max_attempts
