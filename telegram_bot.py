@@ -118,27 +118,17 @@ class C:
 TYPE_NAMES: Dict[str, str] = {'all': 'Все', 'photo': 'Фото', 'video': 'Видео', 'audio': 'Аудио', 'document': 'Документы', 'archive': 'Архивы'}
 STATUS_NAMES: Dict[str, str] = {'all': 'Все', 'uploaded': 'Скачано', 'unuploaded': 'Не скачано', 'new': 'Новые', 'skipped': 'Пропущено', 'error': 'Ошибки'}
 
-_bot_status_cache: Optional[dict] = None
-_bot_status_cache_time: float = 0
 BOT_STATUS_CACHE_TTL: float = 4.0
 
 
 async def get_cached_bot_status(db: DatabaseManager) -> dict:
     """Возвращает кэшированный статус для бота."""
-    global _bot_status_cache, _bot_status_cache_time
-    now: float = time.time()
-    if _bot_status_cache is not None and now - _bot_status_cache_time < BOT_STATUS_CACHE_TTL:
-        return _bot_status_cache
-    _bot_status_cache = await db.generate_bot_status()
-    _bot_status_cache_time = now
-    return _bot_status_cache
+    return await _bot_state.get_cached_status(db)
 
 
 def invalidate_bot_status_cache() -> None:
     """Инвалидирует кэш статуса бота и сбрасывает таймер watcher."""
-    global _bot_status_cache, _bot_status_cache_time
-    _bot_status_cache = None
-    _bot_status_cache_time = 0
+    _bot_state.invalidate_status_cache()
 
 
 def is_backup_running() -> bool:
@@ -155,38 +145,9 @@ def is_backup_running() -> bool:
         return False
 
 
-_cached_age: float = 0
-_cached_age_time: float = 0
-
 def get_heartbeat_age() -> float:
     """Возвращает возраст последнего heartbeat (кэш 2 секунды)."""
-    global _cached_age, _cached_age_time
-    now = time.time()
-    if now - _cached_age_time < 2.0:
-        return _cached_age
-    _cached_age_time = now
-    try:
-        import sqlite3
-        conn: sqlite3.Connection = sqlite3.connect("backup.db")
-        # Смотрим и queue_processing, и active_progress — что новее
-        cursor: sqlite3.Cursor = conn.execute(
-            "SELECT MAX(updated_at) FROM ("
-            "  SELECT updated_at FROM queue_processing WHERE started_at > ? "
-            "  UNION ALL "
-            "  SELECT updated_at FROM active_progress WHERE updated_at > ?"
-            ")",
-            (time.time() - 3600, time.time() - 3600)
-        )
-        row: Optional[tuple] = cursor.fetchone()
-        conn.close()
-        if row and row[0]:
-            age: float = time.time() - row[0]
-            _cached_age = min(age, 999)
-            return _cached_age
-    except Exception:
-        pass
-    _cached_age = 0
-    return 0
+    return _bot_state.get_heartbeat_age()
 
 
 @dataclass
@@ -273,6 +234,55 @@ class BotState:
                 if not task.done():
                     task.cancel()
             self._watcher_tasks.clear()
+    
+    # Кэш статуса бота
+    _status_cache: Optional[dict] = None
+    _status_cache_time: float = 0
+    
+    def invalidate_status_cache(self) -> None:
+        """Инвалидирует кэш статуса."""
+        self._status_cache = None
+        self._status_cache_time = 0
+    
+    async def get_cached_status(self, db: DatabaseManager) -> dict:
+        """Возвращает кэшированный статус для бота."""
+        now: float = time.time()
+        if self._status_cache is not None and now - self._status_cache_time < BOT_STATUS_CACHE_TTL:
+            return self._status_cache
+        self._status_cache = await db.generate_bot_status()
+        self._status_cache_time = now
+        return self._status_cache
+    
+    # Кэш heartbeat age
+    _cached_age: float = 0
+    _cached_age_time: float = 0
+    
+    def get_heartbeat_age(self) -> float:
+        """Возвращает возраст последнего heartbeat (кэш 2 секунды)."""
+        now = time.time()
+        if now - self._cached_age_time < 2.0:
+            return self._cached_age
+        self._cached_age_time = now
+        try:
+            import sqlite3
+            conn: sqlite3.Connection = sqlite3.connect("backup.db")
+            cursor: sqlite3.Cursor = conn.execute(
+                "SELECT MAX(updated_at) FROM ("
+                "  SELECT updated_at FROM queue_processing WHERE started_at > ? "
+                "  UNION ALL "
+                "  SELECT updated_at FROM active_progress WHERE updated_at > ?"
+                ")",
+                (time.time() - 3600, time.time() - 3600)
+            )
+            row: Optional[tuple] = cursor.fetchone()
+            conn.close()
+            if row and row[0]:
+                self._cached_age = min(time.time() - row[0], 999)
+                return self._cached_age
+        except Exception:
+            pass
+        self._cached_age = 0
+        return 0
 
 
 _bot_state: BotState = BotState()
