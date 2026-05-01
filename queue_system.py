@@ -1284,7 +1284,6 @@ class QueueSystem:
         for name, pool in self.pools.items():
             try:
                 await asyncio.wait_for(pool.start(), timeout=10.0)
-                logger.info(f"✅ Пул {name} запущен")
             except Exception as e:
                 logger.error(f"❌ Ошибка запуска пула {name}: {e}")
 
