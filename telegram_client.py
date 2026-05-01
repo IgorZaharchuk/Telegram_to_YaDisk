@@ -269,14 +269,10 @@ class TelegramDownloader:
         self.archive_extensions: Set[str] = set(file_types.get('archive', []))
 
         self._ext_type_map: Dict[str, str] = {}
-        for ext in self.photo_extensions:
-            self._ext_type_map[ext.lower()] = 'photo'
-        for ext in self.video_extensions:
-            self._ext_type_map[ext.lower()] = 'video'
-        for ext in self.audio_extensions:
-            self._ext_type_map[ext.lower()] = 'audio'
-        for ext in self.archive_extensions:
-            self._ext_type_map[ext.lower()] = 'archive'
+        for ext_list, ftype in [(self.photo_extensions, 'photo'), (self.video_extensions, 'video'),
+                                 (self.audio_extensions, 'audio'), (self.archive_extensions, 'archive')]:
+            for ext in ext_list:
+                self._ext_type_map[ext.lower()] = ftype
 
         self.db: Optional[DatabaseManager] = None
         
@@ -747,28 +743,18 @@ class TelegramDownloader:
             filename = name[:195] + ext
         return filename
 
+    # Маппинг типов файлов на расширения для генерации имён
+    _FILENAME_EXT_MAP: Dict[str, str] = {
+        'photo': '.jpg', 'video': '.mp4', 'audio': '.mp3',
+        'voice': '.ogg', 'sticker': '.webp', 'animation': '.mp4',
+        'video_note': '.mp4', 'archive': '.zip',
+    }
+
     def _generate_filename_by_type(self, message: Message) -> str:
         """Генерирует имя файла на основе типа."""
         file_type: str = self.get_file_type(message)
-        
-        if file_type == 'photo':
-            return f"photo_{message.id}.jpg"
-        elif file_type == 'video':
-            return f"video_{message.id}.mp4"
-        elif file_type == 'audio':
-            return f"audio_{message.id}.mp3"
-        elif file_type == 'voice':
-            return f"voice_{message.id}.ogg"
-        elif file_type == 'sticker':
-            return f"sticker_{message.id}.webp"
-        elif file_type == 'animation':
-            return f"animation_{message.id}.mp4"
-        elif file_type == 'video_note':
-            return f"video_note_{message.id}.mp4"
-        elif file_type == 'archive':
-            return f"archive_{message.id}.zip"
-        else:
-            return f"doc_{message.id}.bin"
+        ext: str = self._FILENAME_EXT_MAP.get(file_type, '.bin')
+        return f"{file_type}_{message.id}{ext}"
 
     def get_filename_from_message(self, message: Message) -> Optional[str]:
         """Извлекает имя файла из сообщения."""
