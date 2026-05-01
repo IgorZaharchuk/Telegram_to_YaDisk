@@ -604,6 +604,60 @@ def get_animated_header() -> str:
     return "🟢" if _animation_counter % 2 == 0 else "⚪"
 
 
+def _fmt_active_line(op_type, item, context):
+    lines = []
+    filename = item.get('filename', 'unknown')[:40]
+    size = item.get('size', 0)
+    size_str = f"({fmt_size(size)})" if size else ""
+    show_progress = size > 10 * 1024 * 1024
+    progress = item.get('progress')
+    if progress is not None:
+        try:
+            progress = float(progress)
+            progress = max(0.0, min(100.0, progress))
+        except (ValueError, TypeError):
+            progress = 0.0
+    else:
+        progress = 0.0
+    if op_type == 'download':
+        lines.append(f"📥 {filename}  {size_str}")
+        if context == 'main' and progress > 0 and show_progress:
+            lines.append(f"   {fmt_bar(progress)}")
+        elif context == 'stats' and progress > 0:
+            lines[-1] += f" {progress:.0f}%"
+    elif op_type == 'compress':
+        speed = item.get('speed', 0)
+        eta = item.get('eta')
+        cache_key = f"compress_speed_{item.get('filename', '')}"
+        if (speed or 0) > 0:
+            _compress_speed_cache[cache_key] = (speed, eta)
+        elif cache_key in _compress_speed_cache:
+            speed, eta = _compress_speed_cache[cache_key]
+        lines.append(f"🗜️ {filename}  {size_str}")
+        fake_100 = (progress is not None and progress >= 99.9 and (speed or 0) == 0)
+        if context == 'main' and progress > 0 and show_progress and not fake_100:
+            lines.append(f"   {fmt_bar(progress)}")
+            if (speed or 0) > 0:
+                info = f"   x{speed:.1f}"
+                if eta:
+                    info += f" | ETA {int(eta)}s"
+                lines.append(info)
+        elif context == 'stats':
+            if progress > 0:
+                lines[-1] += f" {progress:.0f}%"
+            if (speed or 0) > 0:
+                info = f"   x{speed:.1f}"
+                if eta:
+                    info += f" | ETA {int(eta)}s"
+                lines.append(info)
+    elif op_type == 'upload':
+        lines.append(f"📤 {filename}  {size_str}")
+        if context == 'main' and progress > 0 and show_progress:
+            lines.append(f"   {fmt_bar(progress)}")
+        elif context == 'stats' and progress > 0:
+            lines[-1] += f" {progress:.0f}%"
+    return lines
+
 def format_active_files(status: dict, context: str = 'main', max_items: Optional[int] = None) -> List[str]:
     """Форматирует список активных файлов."""
     if max_items is None:
@@ -663,63 +717,7 @@ def format_active_files(status: dict, context: str = 'main', max_items: Optional
     hidden_upload: int = len(uploading) - len(shown_upload)
     
     for op_type, item in all_shown:
-        filename: str = item.get('filename', 'unknown')[:40]
-        size: int = item.get('size', 0)
-        
-        progress: Optional[float] = item.get('progress')
-        if progress is not None:
-            try:
-                progress = float(progress)
-                progress = max(0.0, min(100.0, progress))
-            except (ValueError, TypeError):
-                progress = 0.0
-        else:
-            progress = 0.0
-        
-        size_str: str = f"({fmt_size(size)})" if size else ""
-        show_progress: bool = size > 10 * 1024 * 1024
-        
-        if op_type == 'download':
-            lines.append(f"📥 {filename}  {size_str}")
-            if context == 'main' and progress > 0 and show_progress:
-                lines.append(f"   {fmt_bar(progress)}")
-            elif context == 'stats' and progress > 0:
-                lines[-1] += f" {progress:.0f}%"
-                
-        elif op_type == 'compress':
-            speed: float = item.get('speed', 0)
-            eta: Optional[float] = item.get('eta')
-            cache_key: str = f"compress_speed_{item.get('filename', '')}"
-            if (speed or 0) > 0:
-                _compress_speed_cache[cache_key] = (speed, eta)
-            elif cache_key in _compress_speed_cache:
-                speed, eta = _compress_speed_cache[cache_key]
-            
-            lines.append(f"🗜️ {filename}  {size_str}")
-            # Не показываем 100% если нет скорости — глюк ffmpeg в начале
-            fake_100 = (progress is not None and progress >= 99.9 and (speed or 0) == 0)
-            if context == 'main' and progress > 0 and show_progress and not fake_100:
-                lines.append(f"   {fmt_bar(progress)}")
-                if (speed or 0) > 0:
-                    info: str = f"   x{speed:.1f}"
-                    if eta:
-                        info += f" | ETA {int(eta)}с"
-                    lines.append(info)
-            elif context == 'stats':
-                if progress > 0:
-                    lines[-1] += f" {progress:.0f}%"
-                if (speed or 0) > 0:
-                    info = f"   x{speed:.1f}"
-                    if eta:
-                        info += f" | ETA {int(eta)}с"
-                    lines.append(info)
-                    
-        elif op_type == 'upload':
-            lines.append(f"📤 {filename}  {size_str}")
-            if context == 'main' and progress > 0 and show_progress:
-                lines.append(f"   {fmt_bar(progress)}")
-            elif context == 'stats' and progress > 0:
-                lines[-1] += f" {progress:.0f}%"
+        lines.extend(_fmt_active_line(op_type, item, context))
     
     total_hidden: int = hidden_download + hidden_compress + hidden_upload
     if total_hidden > 0:
