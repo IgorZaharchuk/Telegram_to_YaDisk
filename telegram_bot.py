@@ -108,7 +108,7 @@ class C:
     ITEMS_PER_PAGE: int = 10
     MAX_MSG_LEN: int = 4000
     PROGRESS_BAR_WIDTH: int = 13
-    UPDATE_INTERVAL: float = 4.0
+    UPDATE_INTERVAL: float = 5.0
     LOG_LINES_PER_PAGE: int = 30
     MAX_ACTIVE_FILES_TOTAL: int = 10
     MAX_HISTORY_ITEMS: int = 10
