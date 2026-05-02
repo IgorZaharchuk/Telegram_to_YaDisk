@@ -2179,33 +2179,24 @@ async def schedule_manager(app: Application) -> None:
                     _schedule_exit_time.clear()
             else:
                 _launched_this_window = False
-                # Убиваем только если он был запущен автоматически в этом окне
-                if auto and windows and is_backup_running() and _launched_this_window is False:
-                    if 0 not in _schedule_exit_time:
-                        _schedule_exit_time[0] = time.time()
-                        logger.info("🕐 Выход из окна, даю 5 минут на завершение...")
-                    elif time.time() - _schedule_exit_time[0] > 300:
-                        logger.info("🕐 Остановка бэкапа (выход из окна)")
-                        pid_file: Path = Path(PID_FILE)
-                        if pid_file.exists():
+                if is_backup_running():
+                    logger.info("🕐 Остановка бэкапа (выход из окна)")
+                    pid_file: Path = Path(PID_FILE)
+                    if pid_file.exists():
+                        try:
+                            with open(pid_file, 'r') as f:
+                                pid: int = int(f.read().strip())
+                            os.kill(pid, signal.SIGTERM)
+                            await asyncio.sleep(2)
                             try:
-                                with open(pid_file, 'r') as f:
-                                    pid: int = int(f.read().strip())
-                                os.kill(pid, signal.SIGTERM)
-                                await asyncio.sleep(2)
-                                try:
-                                    os.kill(pid, 0)
-                                    os.kill(pid, signal.SIGKILL)
-                                except ProcessLookupError:
-                                    pass
-                                pid_file.unlink(missing_ok=True)
-                                invalidate_bot_status_cache()
-                            except Exception:
+                                os.kill(pid, 0)
+                                os.kill(pid, signal.SIGKILL)
+                            except ProcessLookupError:
                                 pass
-                        _schedule_exit_time.clear()
-                        _launched_this_window = False  # сбрасываем после успешной остановки
-                else:
-                    _schedule_exit_time.clear()
+                            pid_file.unlink(missing_ok=True)
+                            invalidate_bot_status_cache()
+                        except Exception:
+                            pass
             await asyncio.sleep(check_interval)
         except asyncio.CancelledError:
             break
