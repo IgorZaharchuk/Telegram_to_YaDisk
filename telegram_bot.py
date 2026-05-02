@@ -108,7 +108,7 @@ class C:
     ITEMS_PER_PAGE: int = 10
     MAX_MSG_LEN: int = 4000
     PROGRESS_BAR_WIDTH: int = 13
-    UPDATE_INTERVAL: float = 5.0
+    UPDATE_INTERVAL: float = 4.0
     LOG_LINES_PER_PAGE: int = 30
     MAX_ACTIVE_FILES_TOTAL: int = 10
     MAX_HISTORY_ITEMS: int = 10
@@ -1504,9 +1504,12 @@ async def show_files(uid: int, bot: Any, chat_id: int, topic_id: str, page: int 
 
 async def handle_backup_start(uid: int, bot: Any, edit_id: Optional[int] = None, callback: Optional[Any] = None) -> None:
     """Запускает процесс бэкапа."""
+    global _launched_this_window
     if is_backup_running():
         await send_temp_message(bot, uid, "⚠️ Бэкап уже запущен")
         return
+    _launched_this_window = False  # ручной запуск — не даём автостопу убить процесс
+    _schedule_exit_time.clear()
     subprocess.Popen([sys.executable, "main.py"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     await asyncio.sleep(2)
     invalidate_bot_status_cache()
@@ -2176,7 +2179,8 @@ async def schedule_manager(app: Application) -> None:
                     _schedule_exit_time.clear()
             else:
                 _launched_this_window = False
-                if auto and windows and is_backup_running():
+                # Убиваем только если он был запущен автоматически в этом окне
+                if auto and windows and is_backup_running() and _launched_this_window is False:
                     if 0 not in _schedule_exit_time:
                         _schedule_exit_time[0] = time.time()
                         logger.info("🕐 Выход из окна, даю 5 минут на завершение...")
@@ -2199,6 +2203,9 @@ async def schedule_manager(app: Application) -> None:
                             except Exception:
                                 pass
                         _schedule_exit_time.clear()
+                        _launched_this_window = False  # сбрасываем после успешной остановки
+                else:
+                    _schedule_exit_time.clear()
             await asyncio.sleep(check_interval)
         except asyncio.CancelledError:
             break
