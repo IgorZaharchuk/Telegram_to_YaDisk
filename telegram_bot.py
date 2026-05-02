@@ -2178,8 +2178,9 @@ async def schedule_manager(app: Application) -> None:
                     _launched_this_window = True
                     _schedule_exit_time.clear()
             else:
+                was_launched = _launched_this_window
                 _launched_this_window = False
-                if is_backup_running():
+                if was_launched and is_backup_running():
                     logger.info("🕐 Остановка бэкапа (выход из окна)")
                     pid_file: Path = Path(PID_FILE)
                     if pid_file.exists():
