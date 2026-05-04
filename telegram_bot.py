@@ -108,7 +108,7 @@ class C:
     ITEMS_PER_PAGE: int = 10
     MAX_MSG_LEN: int = 4000
     PROGRESS_BAR_WIDTH: int = 13
-    UPDATE_INTERVAL: float = 5.0
+    UPDATE_INTERVAL: float = 4.0
     LOG_LINES_PER_PAGE: int = 25
     MAX_ACTIVE_FILES_TOTAL: int = 10
     MAX_HISTORY_ITEMS: int = 10
@@ -256,6 +256,7 @@ class BotState:
     # Кэш heartbeat age
     _cached_age: float = 0
     _cached_age_time: float = 0
+    _last_user_action: float = time.time()
     
     def get_heartbeat_age(self) -> float:
         """Возвращает возраст последнего heartbeat (кэш 2 секунды)."""
@@ -934,11 +935,15 @@ async def watch_menu(uid: int, bot: Any, menu_name: str, format_func: Callable, 
     errors: int = 0
     first_update: bool = True
     try:
+        logger.info(f"🔄 Автообновление меню запущено для {uid}")
         while True:
             if first_update:
                 await asyncio.sleep(1.0)
                 first_update = False
             else:
+                if time.time() - _bot_state._last_user_action > 1800:
+                    logger.info(f"💤 Автообновление меню остановлено для {uid}")
+                    break
                 await asyncio.sleep(C.UPDATE_INTERVAL)
             current_menu = await _bot_state.get_menu(uid)
             if current_menu != menu_name or current_menu == '':
@@ -2245,6 +2250,7 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.info(f"📱 [{uid}] Кнопка: {q.data}")
     edit_id: int = q.message.message_id
     await _bot_state.set_msg(uid, edit_id)
+    _bot_state._last_user_action = time.time()
     invalidate_bot_status_cache()
     try:
         await q.answer()
