@@ -660,6 +660,13 @@ class TelegramDownloader:
                 logger.info(f"   🗑️ Удалена несуществующая тема: {t['topic_name']} ({t['topic_id']})")
         await db.commit()
         
+        # Сбрасываем статус для файлов которых больше нет в чате
+        new_ids = {msg.id for msg in (await self._scan_chat(chat_id, 'full', None)) if self._has_file(msg)}
+        existing_ids = {f['message_id'] for f in await db.get_files(chat_id)}
+        for mid in existing_ids - new_ids:
+            await db.execute("DELETE FROM files WHERE chat_id = ? AND message_id = ?", (chat_id, mid))
+        await db.commit()
+
         messages: List[Message] = await self._scan_chat(chat_id, 'full', progress_callback)
         if not messages:
             logger.warning(f"⚠️ В чате {chat_id} не найдено файлов")
@@ -674,6 +681,16 @@ class TelegramDownloader:
                 files_found=total_files, current_topic=None, completed=True
             )
         
+        # Пересчитываем статистику чата из реальных данных
+        cursor = await db.execute("SELECT COUNT(*), COALESCE(SUM(size), 0) FROM files WHERE chat_id = ?", (chat_id,))
+        row = await cursor.fetchone()
+        actual_total, actual_bytes = row[0], row[1] or 0
+        cursor = await db.execute("SELECT COUNT(*), COALESCE(SUM(size), 0) FROM files WHERE chat_id = ? AND state IN (?, ?)", (chat_id, STATE_UPLOADED, STATE_SKIPPED))
+        uploaded_row = await cursor.fetchone()
+        actual_uploaded, uploaded_bytes = uploaded_row[0], uploaded_row[1] or 0
+        await db.execute("UPDATE chat_stats SET total = ?, uploaded = ?, total_bytes = ?, uploaded_bytes = ?, updated_at = ? WHERE chat_id = ?", (actual_total, actual_uploaded, actual_bytes, uploaded_bytes, time.time(), chat_id))
+        await db.commit()
+
         logger.info(f"✅ Полное сканирование чата {chat_id} завершено. Всего файлов: {total_files}")
         return total_files
 
