@@ -247,9 +247,10 @@ class WorkerPool:
                 new_target = max(self.min, self.target - 1)
 
         elif self.name.lower() == 'download':
-            if queue_size > self.target * 3 and self.target < self.max:
-                new_target = min(self.max, self.target + 1)
-            elif queue_size == 0 and self.target > self.min:
+            dl_limit = getattr(self, '_dl_limit', self.max)
+            if queue_size > self.target * 3 and self.target < min(self.max, dl_limit):
+                new_target = min(self.max, dl_limit, self.target + 1)
+            elif queue_size <= 1 and self.target > self.min and now - self._last_adjust >= 60:
                 new_target = max(self.min, self.target - 1)
 
         elif self.name.lower() == 'compress_photo':
@@ -758,15 +759,15 @@ class FileProcessor:
             last_update = [0.0]  # mutable для замыкания
             
             async def up_progress(current, total):
-                percent = (current / total * 100) if total > 0 else 0
-                # Обновляем прогресс не чаще раза в секунду
                 now = time.time()
-                if percent - last_update[0] >= 5 or percent >= 99 or now - last_update[0] > 1.0:
-                    last_update[0] = percent if percent < 99 else now
-                    await self._update_progress(item.key, {
-                        'stage': 'upload', 'progress': percent,
-                        'uploaded': current, 'total_size': total
-                    })
+                if total > 0:
+                    percent = min(99.0, (current / total * 100)) if current < total else 99.0
+                    if percent - last_update[0] >= 5 or percent >= 99 or now - last_update[0] > 1.0:
+                        last_update[0] = percent if percent < 99 else now
+                        await self._update_progress(item.key, {
+                            'stage': 'upload', 'progress': percent,
+                            'uploaded': current, 'total_size': total
+                        })
 
             result = await self.ya.upload(
                 local_path=path,
@@ -1397,6 +1398,12 @@ class QueueSystem:
                         continue
                     
                     logger.debug(f"📡 Монитор: counts={counts}")
+
+                    # Синхронизируем лимит download с SimpleAdaptiveDownloader
+                    if hasattr(self.tg, 'download_semaphore'):
+                        for pool_name, pool in self.pools.items():
+                            if pool_name == 'download':
+                                pool._dl_limit = self.tg.download_semaphore.get_current_limit()
 
                     for pool_name, pool in self.pools.items():
                         queue_size = counts.get(self.POOL_STATUS_MAP.get(pool_name, ''), 0)

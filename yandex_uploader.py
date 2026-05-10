@@ -411,6 +411,16 @@ class YandexUploader:
             self.stats['failed_uploads'] += 1
             err_msg = str(e) if str(e) else type(e).__name__
             logger.error(f"❌ Ошибка загрузки {filename}: {err_msg}")
+            # Проверяем — может файл всё-таки загрузился несмотря на ошибку
+            exists, remote_size, remote_md5 = await self.file_exists(remote_dir, safe_filename)
+            if exists and remote_size == file_size and (not remote_md5 or not local_md5 or remote_md5 == local_md5):
+                logger.info(f"✅ {filename} — файл на диске после ошибки, размер и MD5 совпадают")
+                self.stats['successful_uploads'] += 1
+                self.stats['total_bytes'] += file_size
+                return UploadResult(
+                    success=True, status='uploaded', remote_path=remote_path, local_path=local_path,
+                    filename=filename, size=file_size, md5=local_md5, existed=False,
+                    duration_sec=time.time() - start)
             return UploadResult(
                 success=False, status='error', remote_path=remote_path, local_path=local_path,
                 filename=filename, size=file_size, md5=local_md5, existed=False,

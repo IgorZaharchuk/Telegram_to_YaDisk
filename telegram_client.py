@@ -233,6 +233,10 @@ class SimpleAdaptiveDownloader:
             self._condition.notify_all()
         return True
 
+    def get_current_limit(self) -> int:
+        """Возвращает текущий лимит скачиваний."""
+        return self._current_limit
+
     def get_stats(self) -> dict:
         """Возвращает статистику лимитера."""
         return self.stats.copy()
