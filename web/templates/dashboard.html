@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="refresh" content="3">
+    <title>Дашборд — Telegram Backup</title>
+    <style>
+        *{box-sizing:border-box}
+        body{font-size:27px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;background:#1a1a2e;color:#eee;;font-weight:600}
+        .container{max-width:100%;margin:15px auto;padding:0 10px}
+        .header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px}
+        .header h1{margin:0;font-size:26px}
+        .status-dot{display:inline-block;width:14px;height:14px;border-radius:50%;margin-right:5px}
+        .status-dot.running{background:#00ff88;box-shadow:0 0 10px #00ff88}
+        .status-dot.stopped{background:#ff4444}
+        .btn{display:inline-block;padding:12px 28px;border:none;border-radius:8px;cursor:pointer;font-size:22px;font-weight:700;text-decoration:none;margin:3px}
+        .btn-green{background:#00b894;color:#fff}.btn-red{background:#e17055;color:#fff}
+        .btn:disabled{opacity:.4;cursor:not-allowed}
+        .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:15px}
+        .card{background:#16213e;padding:14px 20px;border-radius:10px;text-align:center;border:1px solid #0f3460}
+        .card .label{font-size:18px;color:#8892b0;margin-bottom:6px}
+        .card .num{font-size:32px;font-weight:bold}
+        .card .num.green{color:#00b894}.card .num.red{color:#e17055}.card .num.blue{color:#74b9ff}.card .num.orange{color:#fdcb6e}.card .num.purple{color:#a29bfe}
+        .section{background:#16213e;padding:16px;border-radius:10px;margin-bottom:15px;border:1px solid #0f3460}
+        .section h2{font-size:33px;;color:#ccd6f6;margin:0 0 8px}
+        .active-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:10px}
+        .active-item{background:#1a2744;padding:12px;border-radius:8px;border-left:4px solid #e94560}
+        .active-item.download{border-left-color:#00b894}.active-item.compress{border-left-color:#fdcb6e}.active-item.upload{border-left-color:#74b9ff}
+        .active-item .file{font-size:21px;font-weight:bold;margin-bottom:6px}
+        .active-item .info{font-size:18px;color:#8892b0}
+        .progress-bar{height:10px;background:#0f3460;border-radius:5px;overflow:hidden;margin:6px 0}
+        .progress-fill{height:100%;border-radius:5px}
+        .progress-fill.download{background:#00b894}.progress-fill.compress{background:#fdcb6e}.progress-fill.upload{background:#74b9ff}
+        table{width:100%;border-collapse:collapse;font-size:18px}
+        th,td{padding:8px 10px;border-bottom:1px solid #0f3460;text-align:left}
+        th{color:#8892b0;font-size:18px;text-transform:uppercase;font-weight:700}
+        .tag{display:inline-block;padding:4px 10px;border-radius:4px;;margin:2px;font-weight:600}
+        .tag-green{background:rgba(0,184,148,.2);color:#00b894}.tag-red{background:rgba(225,112,85,.2);color:#e17055}.tag-blue{background:rgba(116,185,255,.2);color:#74b9ff}
+        .flex{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    nav{background:#16213e;padding:0 8px;display:flex;gap:2px;flex-wrap:wrap}nav a{color:#a8b2d1;text-decoration:none;padding:10px 8px;font-size:23px;font-weight:700;white-space:nowrap}nav a:hover,nav a.active{background:#0f3460;color:#e94560}/* На Full HD и шире — уменьшаем всю страницу */
+@media(min-width:1400px){
+    body{font-size:27px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;background:#1a1a2e;color:#eee;;font-weight:600}
+}
+@media(min-width:2560px){
+    body{font-size:27px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;background:#1a1a2e;color:#eee;;font-weight:600}
+}
+</style>
+</head>
+<body>
+{% include "_nav.html" %}
+<div class="container">
+    <div class="header">
+        <h1>
+            <span class="status-dot {% if running %}running{% else %}stopped{% endif %}"></span>
+            Telegram Backup
+            {% if running and heartbeat_age > 0 %}<small style="font-size:20px;color:#8892b0">❤️ {{ "%.1f"|format(heartbeat_age) }}s</small>{% endif %}
+        </h1>
+        <div class="flex">
+            <form method="POST" action="{{ url_for('backup.start_backup') }}" style="display:inline">
+                <button class="btn btn-green" {% if running %}disabled{% endif %}>{% if running %}✅ Запущен{% else %}▶️ Запустить{% endif %}</button>
+            </form>
+            <form method="POST" action="{{ url_for('backup.stop_backup') }}" style="display:inline">
+                <button class="btn btn-red" {% if not running %}disabled{% endif %}>⏹️ Остановить</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="cards">
+        <div class="card"><div class="label">ВСЕГО</div><div class="num">{{ stats.total }}</div></div>
+        <div class="card"><div class="label">ЗАГРУЖЕНО</div><div class="num green">{{ stats.uploaded }}</div></div>
+        <div class="card"><div class="label">В ОЧЕРЕДИ</div><div class="num blue">{{ stats.pending }}</div></div>
+        <div class="card"><div class="label">ВЫБРАНО</div><div class="num orange">{{ stats.selected }}</div></div>
+        <div class="card"><div class="label">НОВЫХ</div><div class="num purple">{{ stats.new_files }}</div></div>
+        <div class="card"><div class="label">ОШИБОК</div><div class="num red">{{ stats.errors }}</div></div>
+        <div class="card"><div class="label">ПРОПУЩЕНО</div><div class="num">{{ stats.skipped }}</div></div>
+        <div class="card"><div class="label">НЕ СКАЧАНО</div><div class="num">{{ stats.unloaded }}</div></div>
+    </div>
+
+    <div class="cards">
+        <div class="card"><div class="label">📥 Скачано</div><div class="num green">{{ session.downloaded }}</div></div>
+        <div class="card"><div class="label">🗜️ Сжато</div><div class="num orange">{{ session.compressed }}</div></div>
+        <div class="card"><div class="label">📤 Загружено</div><div class="num blue">{{ session.uploaded }}</div></div>
+        <div class="card"><div class="label">🔍 Проверено</div><div class="num">{{ session.checked }}</div></div>
+        <div class="card"><div class="label">⏭️ Пропущено</div><div class="num">{{ session.skipped }}</div></div>
+    </div>
+
+    {% if active %}
+    <div class="section">
+        <h2>⚡ Активные ({{ active|length }})</h2>
+        <div class="active-grid">
+            {% for a in active %}
+            <div class="active-item {% if a.worker_type=='download' %}download{% elif a.worker_type in ('compress_photo','compress_video') %}compress{% else %}upload{% endif %}">
+                <div class="file">{{ a.filename[:50] }}</div>
+                {% if a.progress %}<div class="progress-bar"><div class="progress-fill {% if a.worker_type=='download' %}download{% elif a.worker_type in ('compress_photo','compress_video') %}compress{% else %}upload{% endif %}" style="width:{{ a.progress }}%"></div></div>{% endif %}
+                <div class="info">{{ "%.0f"|format(a.progress or 0) }}% | {{ fmt_size(a.file_size or 0) }}{% if a.speed %} | ⚡{{ "%.1f"|format(a.speed) }}x{% endif %}{% if a.eta %} | ⏱️{{ a.eta|int }}s{% endif %}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if scan_progress %}
+    <div class="section">
+        <h2>🔄 Сканирование</h2>
+        {% for cid, s in scan_progress.items() %}
+        <div style="margin:10px 0">
+            <strong>{{ s.chat_name or 'Чат '~cid }}</strong>{% if s.current_topic %} — {{ s.current_topic[:40] }}{% endif %}
+            <div class="progress-bar"><div class="progress-fill download" style="width:{{ s.percent }}%"></div></div>
+            {{ "%.0f"|format(s.percent) }}% | Найдено: {{ s.files_found }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if chat_stats %}
+    <div class="section">
+        <h2>📁 Чаты</h2>
+        <table>
+            <tr><th>Чат</th><th>Всего</th><th>Загружено</th><th>Ошибки</th><th>Сжато</th><th>Объём</th></tr>
+            {% for c in chat_stats %}
+            <tr><td>{{ c.name or 'Чат '~c.chat_id }}</td><td>{{ c.total }}</td><td>{{ c.uploaded }}</td><td>{{ c.errors }}</td><td>{{ c.compressed }}</td><td>{{ fmt_size(c.uploaded_bytes) }} / {{ fmt_size(c.total_bytes) }}</td></tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% endif %}
+</div>
+</body>
+</html>

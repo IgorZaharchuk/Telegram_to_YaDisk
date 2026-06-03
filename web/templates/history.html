@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head><meta charset="utf-8"><title>История — Telegram Backup</title>
+<style>
+*{box-sizing:border-box}body{font-size:27px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;background:#1a1a2e;color:#eee;;font-weight:600}.container{max-width:100%;margin:15px auto;padding:0 10px}h1{font-size:32px;color:#ccd6f6;font-weight:800}.timeline{}.event{position:relative;margin-bottom:12px;padding:20px 24px;background:#16213e;border-radius:10px;border:1px solid #0f3460}.event-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}.event-date{font-size:18px;color:#8892b0}.event-status{padding:4px 12px;border-radius:12px;font-size:16px;font-weight:700;text-transform:uppercase}.status-uploaded{background:rgba(0,184,148,.2);color:#00b894}.status-downloaded{background:rgba(9,132,227,.2);color:#74b9ff}.status-compressed{background:rgba(253,203,110,.2);color:#fdcb6e}.status-skipped{background:rgba(99,110,114,.2);color:#b2bec3}.status-queued{background:rgba(108,92,231,.2);color:#a29bfe}.status-error{background:rgba(225,112,85,.2);color:#e17055}.event-file{font-size:22px;font-weight:700;color:#ccd6f6;word-break:break-all}.event-meta{font-size:19px;color:#a8b2d1;margin-top:4px}.event-chat{color:#74b9ff}.pag{display:flex;gap:14px;justify-content:center;margin:25px 0}.pag a{padding:12px 24px;background:#0984e3;color:#fff;text-decoration:none;border-radius:8px;font-size:19px;font-weight:700}.pag span{padding:12px 24px;color:#8892b0;font-size:19px;font-weight:700}
+
+
+nav{background:#16213e;padding:0 8px;display:flex;gap:2px;flex-wrap:wrap}nav a{color:#a8b2d1;text-decoration:none;padding:10px 8px;font-size:23px;font-weight:700;white-space:nowrap}nav a:hover,nav a.active{background:#0f3460;color:#e94560}/* На Full HD и шире — уменьшаем всю страницу */
+@media(min-width:1400px){
+    body{font-size:27px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;background:#1a1a2e;color:#eee;;font-weight:600}
+}
+@media(min-width:2560px){
+    body{font-size:27px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;background:#1a1a2e;color:#eee;;font-weight:600}
+}
+</style>
+</head>
+<body>
+{% include "_nav.html" %}
+<div class="container">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+    <h1 style="margin:0">📜 История операций</h1>
+    {% if total_pages > 1 %}
+    <div class="pag" style="margin:0">
+    {% if page > 1 %}<a href="?page={{ page-1 }}">◀ Новее</a>{% endif %}
+    <span>{{ page }}/{{ total_pages }}</span>
+    {% if page < total_pages %}<a href="?page={{ page+1 }}">Старее ▶</a>{% endif %}
+    </div>
+    {% endif %}
+</div>
+    
+    <div class="timeline">
+        {% for item in items %}
+        <div class="event">
+            <div class="event-header">
+                <span class="event-date">{{ item.date_str }}</span>
+                <span class="event-statuses" style="display:flex;gap:4px;flex-wrap:wrap">
+                    {% for st in item.statuses %}
+                    <span class="event-status status-{{ st }}">
+                        {% if st == 'queued' %}⏳ В очереди
+                        {% elif st == 'downloaded' %}📥 Скачан
+                        {% elif st == 'compressed' %}🗜️ Сжат
+                        {% elif st == 'uploaded' %}📤 Загружен
+                        {% elif st == 'skipped' %}⏭️ Пропущен
+                        {% elif st == 'error' %}❌ Ошибка
+                        {% else %}{{ st }}{% endif %}
+                    </span>
+                    {% endfor %}
+                </span>
+            </div>
+            <div class="event-file">📄 {{ item.filename[:80] }}</div>
+            <div class="event-meta">
+                <span class="event-chat">📁 {{ item.chat_name or 'Чат '~item.chat_id }}</span>
+                {% if item.topic_name and item.topic_name != 'General' %}
+                <span> › 📂 {{ item.topic_name }}</span>
+                {% endif %}
+                <span> • {{ fmt_size(item.size) }}</span>
+                {% if item.compressed_size and item.compressed_size != item.size and item.compressed_size > 0 %}
+                <span style="color:#00b894"> → {{ fmt_size(item.compressed_size) }} (экономия {{ ((1 - item.compressed_size/item.size)*100)|round }}%)</span>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,7 @@
+/* На Full HD и шире — уменьшаем всю страницу */
+@media(min-width:1400px){
+    body{zoom:0.7}
+}
+@media(min-width:2560px){
+    body{zoom:0.85}
+}

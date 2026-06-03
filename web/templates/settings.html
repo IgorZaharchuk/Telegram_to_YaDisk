@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head><meta charset="utf-8"><title>Настройки — Telegram Backup</title>
+<style>*{box-sizing:border-box}body{font-size:27px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;background:#1a1a2e;color:#eee;;font-weight:600}.container{max-width:100%;margin:15px auto;padding:0 10px}.section{background:#16213e;padding:28px;border-radius:12px;margin-bottom:22px;border:1px solid #0f3460}h1,h2,h3{color:#ccd6f6;font-weight:800}h1{font-size:24px}h2{font-size:33px;;color:#ccd6f6;margin:0 0 8px}h3{font-size:24px}.table-wrap{overflow-x:auto;border-radius:12px}.table-wrap table{width:100%;border-collapse:collapse;font-size:20px;table-layout:auto;min-width:800px;font-weight:700}th,td{padding:10px 10px;border-bottom:1px solid #0f3460;overflow:hidden;text-overflow:ellipsis;max-width:350px;font-weight:700}th{color:#8892b0;font-size:18px;text-transform:uppercase;letter-spacing:1px;font-weight:700}.btn{display:inline-block;padding:12px 28px;border:none;border-radius:8px;cursor:pointer;font-size:22px;font-weight:700;text-decoration:none;margin:3px}.btn-green{background:#00b894;color:#fff}.btn-red{background:#e17055;color:#fff}.btn-blue{background:#0984e3;color:#fff}.btn-gray{background:#636e72;color:#fff}.btn-purple{background:#6c5ce7;color:#fff}.tag{display:inline-block;padding:4px 10px;border-radius:4px;;margin:2px;font-weight:600}.tag-green{background:rgba(0,184,148,.2);color:#00b894}.tag-red{background:rgba(225,112,85,.2);color:#e17055}.tag-blue{background:rgba(116,185,255,.2);color:#74b9ff}.pag{display:flex;gap:14px;justify-content:center;margin:25px 0}.pag a{display:inline-block;padding:12px 28px;border:none;border-radius:8px;cursor:pointer;font-size:22px;font-weight:700;text-decoration:none;margin:3px}.pag span{padding:12px 24px;color:#8892b0;font-size:21px;font-weight:700}.filters{background:#16213e;padding:8px 10px;border-radius:8px;margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap;align-items:center;border:1px solid #0f3460}.filters a{font-size:25px;padding:4px 8px;border-radius:4px;;text-decoration:none;background:#1a2744;color:#a8b2d1;font-weight:600}.filters a.active{background:#0984e3;color:#fff}input,select{padding:12px 16px;border:1px solid #0f3460;border-radius:8px;background:#1a2744;color:#eee;font-size:20px;font-weight:700}.flex{display:flex;gap:14px;flex-wrap:wrap;align-items:center}pre{background:#0a0a1a;padding:22px;border-radius:10px;overflow:auto;font-size:19px;line-height:1.6;white-space:pre-wrap;word-break:break-all;font-weight:700}.tabs{display:flex;gap:8px;margin-bottom:20px}.tabs a{padding:12px 24px;background:#1a2744;text-decoration:none;color:#a8b2d1;border-radius:8px 8px 0 0;font-size:20px;font-weight:700}.tabs a.active{background:#0984e3;color:#fff}p{font-size:21px;font-weight:700}strong{font-size:25px;color:#8892b0;}
+
+
+nav{background:#16213e;padding:0 8px;display:flex;gap:2px;flex-wrap:wrap}nav a{color:#a8b2d1;text-decoration:none;padding:10px 8px;font-size:23px;font-weight:700;white-space:nowrap}nav a:hover,nav a.active{background:#0f3460;color:#e94560}/* На Full HD и шире — уменьшаем всю страницу */
+@media(min-width:1400px){
+    body{font-size:27px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;background:#1a1a2e;color:#eee;;font-weight:600}
+}
+@media(min-width:2560px){
+    body{font-size:27px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;background:#1a1a2e;color:#eee;;font-weight:600}
+}
+</style>
+</head>
+<body>
+{% include "_nav.html" %}
+
+<div class="container">
+    <h1 style="font-size:24px;">⚙️ Настройки</h1>
+
+    <div class="section">
+        <h3>🕐 Окна работы</h3>
+        <form method="POST" action="{{ url_for('backup.add_window') }}" style="margin-bottom: 14px;">
+            <input type="text" name="start" placeholder="Начало (9:00)" style="width: 130px;">
+            <input type="text" name="end" placeholder="Конец (18:00)" style="width: 130px;">
+            <button class="btn btn-green">➕ Добавить окно</button>
+        </form>
+        {% if windows %}
+        <table>
+            <tr><th>#</th><th>Начало</th><th>Конец</th><th></th></tr>
+            {% for w in windows %}
+            <tr>
+                <td>{{ loop.index }}</td><td>{{ w.start }}</td><td>{{ w.end }}</td>
+                <td>
+                    <form method="POST" action="{{ url_for('backup.remove_window', idx=loop.index0) }}" style="display:inline">
+                        <button class="btn btn-red">❌</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+        <form method="POST" action="{{ url_for('backup.clear_windows') }}" onsubmit="return confirm('Удалить все окна работы?')" style="margin-top: 10px;">
+            <button class="btn btn-gray">🗑️ Очистить все окна</button>
+        </form>
+        {% else %}
+        <p style="color:#8892b0">Нет окон работы</p>
+        {% endif %}
+        <form method="POST" action="{{ url_for('backup.toggle_auto') }}" style="margin-top: 14px;">
+            <button class="btn btn-blue" style="font-size:20px; padding:14px 28px;">
+                {% if auto %}🔄 Автозапуск: ✅ ВКЛ{% else %}🔄 Автозапуск: ❌ ВЫКЛ{% endif %}
+            </button>
+        </form>
+    </div>
+
+        <div class="section">
+        <h3>🔧 Параметры системы</h3>
+        <table>
+            <tr><th>Параметр</th><th>Значение</th></tr>
+            <tr><td>📁 Путь загрузки</td><td>{{ settings.get('paths', {}).get('download_dir', 'downloads') }}</td></tr>
+            <tr><td>☁️ Путь на Диске</td><td>{{ settings.get('upload', {}).get('base_path', '/tg_backup') }}</td></tr>
+            <tr><td>📥 Макс. загрузок</td><td>{{ settings.get('download', {}).get('max_concurrent', 3) }}</td></tr>
+            <tr><td>📤 Макс. выгрузок</td><td>{{ settings.get('upload', {}).get('max_concurrent_uploads', 3) }}</td></tr>
+            <tr><td>🔍 Проверяющих</td><td>{{ settings.get('queue', {}).get('check_workers', 10) }}</td></tr>
+            <tr><td>📥 Скачивающих</td><td>{{ settings.get('queue', {}).get('download_workers', 6) }}</td></tr>
+            <tr><td>🗜️ Фото-воркеров</td><td>{{ settings.get('queue', {}).get('photo_workers', 2) }}</td></tr>
+            <tr><td>🎬 Видео-воркеров</td><td>{{ settings.get('queue', {}).get('video_workers', 1) }}</td></tr>
+            <tr><td>📤 Выгружающих</td><td>{{ settings.get('queue', {}).get('upload_workers', 5) }}</td></tr>
+            <tr><td>🗜️ Мин. размер фото (KB)</td><td>{{ settings.get('compression', {}).get('min_photo_size_kb', 500) }}</td></tr>
+            <tr><td>🎬 Мин. размер видео (MB)</td><td>{{ settings.get('compression', {}).get('min_video_size_mb', 15) }}</td></tr>
+            <tr><td>🖼️ Качество JPEG</td><td>{{ settings.get('compression', {}).get('image_quality', 92) }}</td></tr>
+            <tr><td>🎬 CRF видео</td><td>{{ settings.get('compression', {}).get('video_crf', 23) }}</td></tr>
+            <tr><td>🔄 Автозапуск</td><td>{% if auto %}✅ Включён{% else %}❌ Выключен{% endif %}</td></tr>
+        </table>
+    </div>
+
+<div class="section danger-zone">
+        <h3>⚠️ Опасная зона</h3>
+        <p style="color:#8892b0;">Эти действия могут повлиять на работу бэкапа. Используйте с осторожностью.</p>
+        
+        <div class="flex" style="margin-bottom:14px">
+            <form method="POST" action="{{ url_for('backup.force_kill') }}" onsubmit="return confirm('Принудительно завершить main.py?')">
+                <button class="btn btn-orange">💀 Force Kill</button>
+            </form>
+        </div>
+        
+        <div class="flex" style="margin-bottom:14px; gap:12px;">
+            <form method="POST" action="{{ url_for('backup.clear_queue') }}" onsubmit="return confirm('Очистить всю очередь?')">
+                <button class="btn btn-gray">🗑️ Очистить очередь</button>
+            </form>
+            <form method="POST" action="{{ url_for('backup.cleanup_temp') }}" onsubmit="return confirm('Очистить временные файлы?')">
+                <button class="btn btn-gray">🧹 Очистить temp</button>
+            </form>
+            <form method="POST" action="{{ url_for('backup.clear_errors') }}" onsubmit="return confirm('Очистить все ошибки?')">
+                <button class="btn btn-gray">🗑️ Очистить ошибки</button>
+            </form>
+            <form method="POST" action="{{ url_for('backup.refresh_all_cache') }}" onsubmit="return confirm('Обновить кэш всех чатов? Это запустит сканирование.')">
+                <button class="btn btn-blue">🔄 Обновить кэш</button>
+            </form>
+        </div>
+        
+        <div class="flex">
+            <form method="POST" action="{{ url_for('backup.reset_all_stats') }}" onsubmit="return confirm('⚠️ Сбросить ВСЮ статистику? Это удалит все чаты, историю, кэш файлов. Необратимо!')">
+                <button class="btn btn-red" style="padding:14px 24px; font-size:20px;">⚠️ Сбросить всю статистику</button>
+            </form>
+        </div>
+    </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head><meta charset="utf-8"><title>{{ topic.topic_name }} — {{ chat_name }}</title>
+<style>
+*{box-sizing:border-box}body{font-size:27px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;background:#1a1a2e;color:#eee;;font-weight:600}
+
+.container{max-width:100%;margin:15px auto;padding:0 10px}
+h2{font-size:33px;;color:#ccd6f6;margin:0 0 8px}
+.tag{display:inline-block;padding:4px 10px;border-radius:4px;;margin:2px;font-weight:600}
+.tag-green{background:rgba(0,184,148,.2);color:#00b894}
+.tag-red{background:rgba(225,112,85,.2);color:#e17055}
+.tag-blue{background:rgba(116,185,255,.2);color:#74b9ff}
+.filters{background:#16213e;padding:8px 10px;border-radius:8px;margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap;align-items:center;border:1px solid #0f3460}
+.filters strong{font-size:25px;color:#8892b0;}
+.filters a{padding:4px 8px;border-radius:4px;font-size:25px;text-decoration:none;background:#1a2744;color:#a8b2d1;font-weight:600}
+.filters a.active{background:#0984e3;color:#fff}
+.file-card{background:#16213e;padding:10px 14px;border-radius:8px;margin-bottom:4px;border:1px solid #0f3460;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.file-card:hover{background:#1a2744}
+.file-info{flex:1;min-width:180px}
+.file-name{font-size:25px;;font-weight:700;color:#ccd6f6;word-break:break-all;margin-bottom:2px}
+.file-meta{font-size:19px;;color:#8892b0}
+.file-actions{display:flex;gap:40px;align-items:center}
+.btn-sm{display:inline-block;padding:12px 28px;border:none;border-radius:8px;cursor:pointer;font-size:22px;font-weight:700;text-decoration:none;margin:3px}
+.btn-green{background:#00b894;color:#fff}.btn-gray{background:#636e72;color:#fff}.btn-purple{background:#6c5ce7;color:#fff}
+.file-meta .tag{font-size:inherit}.file-meta span{font-size:inherit}.act-btn{padding:4px 8px;border-radius:4px;background:#1a2744;color:#a8b2d1;font-weight:600;border:1px solid #0f3460;cursor:pointer;font-family:inherit;font-size:inherit}.act-btn:hover{background:#0f3460}nav{background:#16213e;padding:0 8px;display:flex;gap:2px;flex-wrap:wrap}nav a{color:#a8b2d1;text-decoration:none;padding:10px 8px;font-size:23px;font-weight:700;white-space:nowrap}nav a:hover,nav a.active{background:#0f3460;color:#e94560}/* На Full HD и шире — уменьшаем всю страницу */
+@media(min-width:1400px){
+    body{zoom:0.7}
+}
+@media(min-width:2560px){
+    body{zoom:0.85}
+}
+</style>
+</head>
+<body>
+{% include "_nav.html" %}
+<div class="container">
+    <h2>📁 {{ chat_name }} / 📂 {{ topic.topic_name }}</h2>
+    <p>
+        <span class="tag tag-green">Всего: {{ stats.total }}</span>
+        <span class="tag tag-green">Загружено: {{ stats.uploaded }}</span>
+        <span class="tag tag-blue">Выбрано: {{ stats.selected }}</span>
+        <span class="tag">Новых: {{ stats.new }}</span>
+        <span class="tag tag-red">Ошибок: {{ stats.error }}</span>
+    </p>
+
+    <div class="filters">
+        <strong>Тип:</strong>
+        {% for ft, label in [('all','Все'),('photo','📸Фото'),('video','🎬Видео'),('audio','🎵Аудио'),('document','📄Документы'),('archive','🗜️Архивы')] %}
+        <a href="?type={{ ft }}&status={{ status_filter }}&sort={{ sort_by }}&order={{ sort_order }}" class="{% if type_filter==ft %}active{% endif %}">{{ label }}</a>
+        {% endfor %}
+    </div>
+    <div class="filters">
+        <strong>Статус:</strong>
+        {% for fs, label in [('all','Все'),('unuploaded','⬜Нескачано'),('uploaded','✅Загружено'),('new','🆕Новые'),('selected','☑️Выбрано'),('error','❌Ошибки')] %}
+        <a href="?type={{ type_filter }}&status={{ fs }}&sort={{ sort_by }}&order={{ sort_order }}" class="{% if status_filter==fs %}active{% endif %}">{{ label }}</a>
+        {% endfor %}
+    </div>
+    <div class="filters">
+        <strong>Действия:</strong>
+        <form method="POST" action="{{ url_for('backup.deselect_all_files', chat_id=chat_id, topic_id=topic_id) }}" style="display:inline">
+            <input type="hidden" name="type" value="{{ type_filter }}">
+            <input type="hidden" name="status" value="{{ status_filter }}">
+            <input type="hidden" name="sort" value="{{ sort_by }}">
+            <input type="hidden" name="order" value="{{ sort_order }}">
+            <button type="submit" class="act-btn">⬜ Снять</button>
+        </form>
+        <form method="POST" action="{{ url_for('backup.select_new_files', chat_id=chat_id, topic_id=topic_id) }}" style="display:inline">
+            <input type="hidden" name="type" value="{{ type_filter }}">
+            <input type="hidden" name="status" value="{{ status_filter }}">
+            <input type="hidden" name="sort" value="{{ sort_by }}">
+            <input type="hidden" name="order" value="{{ sort_order }}">
+            <button type="submit" class="act-btn">🆕 Новые</button>
+        </form>
+        <form method="POST" action="{{ url_for('backup.select_unuploaded_files', chat_id=chat_id, topic_id=topic_id) }}" style="display:inline">
+            <input type="hidden" name="type" value="{{ type_filter }}">
+            <input type="hidden" name="status" value="{{ status_filter }}">
+            <input type="hidden" name="sort" value="{{ sort_by }}">
+            <input type="hidden" name="order" value="{{ sort_order }}">
+            <button type="submit" class="act-btn">⬜ Нескачанные</button>
+        </form>
+        <form method="POST" action="{{ url_for('backup.reset_topic_errors', chat_id=chat_id, topic_id=topic_id) }}" style="display:inline">
+            <input type="hidden" name="type" value="{{ type_filter }}">
+            <input type="hidden" name="status" value="{{ status_filter }}">
+            <input type="hidden" name="sort" value="{{ sort_by }}">
+            <input type="hidden" name="order" value="{{ sort_order }}">
+            <button type="submit" class="act-btn" style="color:#e17055">🔄 Ошибки</button>
+        </form>
+    </div>
+
+    <div class="filters">
+        <strong>Сорт:</strong>
+        {% for sf, sl in [('date','📅Дата'),('name','🔤Имя'),('size','📦Размер')] %}
+        <a href="?sort={{ sf }}&order={% if sort_by==sf and sort_order=='asc' %}desc{% else %}asc{% endif %}&type={{ type_filter }}&status={{ status_filter }}" class="{% if sort_by==sf %}active{% endif %}">{{ sl }}{% if sort_by==sf %}{% if sort_order=='asc' %}▲{% else %}▼{% endif %}{% endif %}</a>
+        {% endfor %}
+        
+        {% if total_pages > 1 %}
+        <span style="display:inline-flex;align-items:center;background:#0984e3;border-radius:6px;overflow:hidden;margin-left:30px;margin-right:8px">
+            {% if page > 1 %}<a href="?page={{ page-1 }}&type={{ type_filter }}&status={{ status_filter }}&sort={{ sort_by }}&order={{ sort_order }}" style="font-size:34px;color:#fff;font-weight:900;text-decoration:none;padding:4px 12px;background:#0984e3">◀</a>{% endif %}
+            <span style="color:#fff;font-size:22px;font-weight:800;padding:4px 12px;border-left:2px solid rgba(255,255,255,.3);border-right:2px solid rgba(255,255,255,.3)">{{ page }}/{{ total_pages }}</span>
+            {% if page < total_pages %}<a href="?page={{ page+1 }}&type={{ type_filter }}&status={{ status_filter }}&sort={{ sort_by }}&order={{ sort_order }}" style="font-size:34px;color:#fff;font-weight:900;text-decoration:none;padding:4px 12px;background:#0984e3">▶</a>{% endif %}
+        </span>
+        {% endif %}
+        <a href="https://disk.yandex.ru/client/disk{{ disk_path }}" target="_blank" style="color:#a29bfe;font-size:25px;margin-left:auto;font-weight:700">📂 Диск</a>
+    </div>
+
+    {% for f in files %}
+    <div class="file-card">
+        <div class="file-info">
+            <div class="file-name">{{ FILE_EMOJI.get(f.file_type, '📄') }} {{ f.filename[:55] }}</div>
+            <div class="file-meta">
+                {{ f.file_type }} • {{ fmt_size(f.size) }}
+                {% if f.state == 2 %}<span class="tag tag-green">✅ Загружен</span>
+                {% elif f.state == 1 %}<span class="tag tag-blue">☑️ Выбран</span>
+                {% elif f.state == 4 %}<span class="tag tag-red">❌ Ошибка</span>
+                {% elif f.state == 0 %}<span class="tag">🆕 Новый</span>
+                {% elif f.state == 3 %}<span>⏭️ Пропущен</span>
+                {% else %}<span>⬜ Не скачан</span>{% endif %}
+            </div>
+        </div>
+        <div class="file-actions">
+            <form method="POST" action="{{ url_for('backup.toggle_file', chat_id=chat_id, message_id=f.message_id, topic_id=topic_id) }}" style="display:inline">
+                <button class="btn-sm {% if f.state==1 %}btn-gray{% else %}btn-green{% endif %}">{% if f.state==1 %}⬜{% else %}☑️{% endif %}</button>
+            </form>
+            {% if f.state == 2 or f.state == 3 %}
+            <a href="{{ url_for('backup.yadisk_file', path=disk_path + '/' + f.filename) }}" target="_blank" class="btn-sm btn-purple">👁️</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+
+<script>
+var fp=[{% for f in files %}{% if f.state==2 or f.state==3 %}"{{ disk_path }}/{{ f.filename }}"{% if not loop.last %},{% endif %}{% endif %}{% endfor %}];
+if(fp.length){fetch("/backup/yadisk/links?paths="+encodeURIComponent(fp.join(","))).then(function(r){return r.json()}).then(function(l){for(var k in l){var b=document.querySelector('[href*="'+encodeURIComponent(k.split('/').pop())+'"]');if(b&&b.classList.contains('btn-purple')){b.href=l[k]}}})}
+</script>
+</body>
+</html>

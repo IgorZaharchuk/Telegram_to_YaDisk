@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head><meta charset="utf-8"><meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0"><title>Логи — Telegram Backup</title>
+<style>
+*{box-sizing:border-box}
+html,body{font-size:27px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;background:#1a1a2e;color:#eee;;font-weight:600}
+body{font-size:27px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;background:#1a1a2e;color:#eee;;font-weight:600}
+nav{background:#16213e;padding:0 8px;display:flex;gap:2px;flex-wrap:wrap;flex-shrink:0}
+nav a{color:#a8b2d1;text-decoration:none;padding:10px 8px;font-size:23px;font-weight:700;white-space:nowrap}
+nav a:hover,nav a.active{background:#0f3460;color:#e94560}
+.container{max-width:100%;margin:15px auto;padding:0 10px}
+h1{font-size:32px;color:#ccd6f6;font-weight:800}
+.log-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;flex-shrink:0}
+.tabs{display:flex;gap:6px}
+.tabs a{padding:12px 24px;background:#0984e3;color:#fff;text-decoration:none;border-radius:8px;font-size:19px;font-weight:700}
+.tabs a.active{background:#0984e3;color:#fff}
+.pag{display:flex;gap:8px;align-items:center}
+.pag a{padding:12px 24px;background:#0984e3;color:#fff;text-decoration:none;border-radius:8px;font-size:19px;font-weight:700}
+.pag span{padding:12px 24px;color:#8892b0;font-size:19px;font-weight:700}
+pre{background:#0a0a1a;padding:16px;border-radius:10px;overflow:auto;font-size:20px;line-height:1.6;white-space:pre-wrap;word-break:break-all;margin:0;flex:1;min-height:0;font-weight:600}
+</style>
+</head>
+<body>
+{% include "_nav.html" %}
+<div class="container">
+    <h1>📝 Логи</h1>
+    <div class="log-header">
+        <div class="tabs">
+            <a href="?type=backup" class="{% if log_type=='backup' %}active{% endif %}">📋 Бэкап</a>
+            <a href="?type=web" class="{% if log_type=='web' %}active{% endif %}">🌐 Веб-сервер</a>
+        </div>
+        {% if total_pages > 1 %}
+        <div class="pag">
+            {% if page > 1 %}<a href="?type={{ log_type }}&page={{ page-1 }}">◀ Новее</a>{% endif %}
+            <span>{{ page }} / {{ total_pages }}</span>
+            {% if page < total_pages %}<a href="?type={{ log_type }}&page={{ page+1 }}">Старее ▶</a>{% endif %}
+        </div>
+        {% endif %}
+    </div>
+    <pre>{% for line in content %}{{ line }}{% endfor %}</pre>
+</div>
+</body>
+</html>
