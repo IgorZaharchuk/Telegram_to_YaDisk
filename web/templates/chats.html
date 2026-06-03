@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="ru">
-<head><meta charset="utf-8"><title>Чаты — Telegram Backup</title>
+<head><meta charset="utf-8">
+    {% if request.args.get('scanning') == '1' %}<meta http-equiv="refresh" content="5">{% endif %}<title>Чаты — Telegram Backup</title>
 <style>*{box-sizing:border-box}body{font-size:27px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;background:#1a1a2e;color:#eee;;font-weight:600}.container{max-width:100%;margin:15px auto;padding:0 10px}.section{background:#16213e;padding:28px;border-radius:12px;margin-bottom:22px;border:1px solid #0f3460}h1,h2,h3{color:#ccd6f6;font-weight:800}h1{font-size:26px}h2{font-size:33px;;color:#ccd6f6;margin:0 0 8px}h3{font-size:26px}.table-wrap{overflow-x:auto;border-radius:12px}.table-wrap table{width:100%;border-collapse:collapse;font-size:22px;table-layout:auto;min-width:800px;font-weight:700}th,td{padding:10px 10px;border-bottom:1px solid #0f3460;overflow:hidden;text-overflow:ellipsis;max-width:350px;font-weight:700}th{color:#8892b0;font-size:20px;text-transform:uppercase;letter-spacing:1px;font-weight:700}.btn{display:inline-block;padding:12px 28px;border:none;border-radius:8px;cursor:pointer;font-size:22px;font-weight:700;text-decoration:none;margin:3px}.btn-green{background:#00b894;color:#fff}.btn-red{background:#e17055;color:#fff}.btn-blue{background:#0984e3;color:#fff}.btn-gray{background:#636e72;color:#fff}.btn-purple{background:#6c5ce7;color:#fff}.tag{display:inline-block;padding:4px 10px;border-radius:4px;;margin:2px;font-weight:600}.tag-green{background:rgba(0,184,148,.2);color:#00b894}.tag-red{background:rgba(225,112,85,.2);color:#e17055}.tag-blue{background:rgba(116,185,255,.2);color:#74b9ff}.pag{display:flex;gap:14px;justify-content:center;margin:25px 0}.pag a{display:inline-block;padding:12px 28px;border:none;border-radius:8px;cursor:pointer;font-size:22px;font-weight:700;text-decoration:none;margin:3px}.pag span{padding:12px 24px;color:#8892b0;font-size:23px;font-weight:700}.filters{background:#16213e;padding:8px 10px;border-radius:8px;margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap;align-items:center;border:1px solid #0f3460}.filters a{font-size:25px;padding:4px 8px;border-radius:4px;;text-decoration:none;background:#1a2744;color:#a8b2d1;font-weight:600}.filters a.active{background:#0984e3;color:#fff}input,select{padding:12px 16px;border:1px solid #0f3460;border-radius:8px;background:#1a2744;color:#eee;font-size:22px;font-weight:700}.flex{display:flex;gap:14px;flex-wrap:wrap;align-items:center}pre{background:#0a0a1a;padding:22px;border-radius:10px;overflow:auto;font-size:21px;line-height:1.6;white-space:pre-wrap;word-break:break-all;font-weight:700}.tabs{display:flex;gap:8px;margin-bottom:20px}.tabs a{padding:12px 24px;background:#1a2744;text-decoration:none;color:#a8b2d1;border-radius:8px 8px 0 0;font-size:22px;font-weight:700}.tabs a.active{background:#0984e3;color:#fff}p{font-size:23px;font-weight:700}strong{font-size:25px;color:#8892b0;}
 
 
@@ -16,6 +17,7 @@ nav{background:#16213e;padding:0 8px;display:flex;gap:2px;flex-wrap:wrap}nav a{c
 <body>
 {% include "_nav.html" %}
 <div class="container">
+    {% if request.args.get('scanning') == '1' %}<p style="color:#fdcb6e;font-size:20px">🔄 Идёт сканирование... Страница обновляется автоматически.</p>{% endif %}
 <h1>💬 Управление чатами</h1>
 <div class="section" style="padding:16px;margin-bottom:16px">
     <form method="POST" action="{{ url_for('backup.add_chat') }}" style="display:flex;gap:10px;align-items:center">
@@ -31,10 +33,8 @@ nav{background:#16213e;padding:0 8px;display:flex;gap:2px;flex-wrap:wrap}nav a{c
     <div class="flex" style="justify-content:space-between">
         <h2><a href="{{ url_for('backup.chat_detail', chat_id=chat.id) }}" style="color:#ccd6f6;text-decoration:none">{{ chat.name }}</a> <small style="color:#636e72;font-size:20px">ID: {{ chat.id }}</small></h2>
         <div>
-            <a href="{{ url_for('backup.chat_detail', chat_id=chat.id) }}" class="btn btn-blue">📂 Управление</a>
-            <form method="POST" action="{{ url_for('backup.delete_chat', chat_id=chat.id) }}" onsubmit="return confirm('Удалить чат {{ chat.name }} полностью? Все данные будут потеряны!')" style="display:inline" onsubmit="return confirm('Удалить чат?')">
-                <button class="btn btn-red">❌ Удалить</button>
-            </form>
+            
+            
         </div>
     </div>
     <p style="margin:10px 0 5px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
@@ -44,8 +44,23 @@ nav{background:#16213e;padding:0 8px;display:flex;gap:2px;flex-wrap:wrap}nav a{c
         <span class="tag">💾 {{ fmt_size(chat.stats.uploaded_bytes or 0) }} / {{ fmt_size(chat.stats.total_bytes or 0) }}</span>
         <span class="tag tag-blue">📂 Тем: {{ chat.topics_count }}</span>
     </p>
+    <div style="margin-top:8px">
+        <a href="{{ url_for('backup.chat_detail', chat_id=chat.id) }}" class="btn btn-blue">📂 Управление</a>
+        <form method="POST" action="{{ url_for('backup.delete_chat', chat_id=chat.id) }}" style="display:inline" onsubmit="return confirm('Удалить чат?')">
+            <button class="btn btn-red">❌ Удалить</button>
+        </form>
+    </div>
     {% if chat.scan and not chat.scan.completed %}
-    <p style="color:#fdcb6e">🔄 Сканирование: {{ "%.0f"|format(chat.scan.percent) }}% | Найдено: {{ chat.scan.files_found }}</p>
+    <div style="margin:8px 0;background:#1a2744;padding:10px;border-radius:8px">
+        <span style="color:#fdcb6e;font-weight:700">🔄 Сканируется: {{ chat.scan.chat_name or chat.name }}{% if chat.scan.current_topic %} → 📂 {{ chat.scan.current_topic }}{% endif %}</span>
+        <div style="display:flex;gap:12px;margin:6px 0;font-size:20px">
+            <span>📊 Найдено: <strong>{{ chat.scan.files_found }}</strong></span>
+            <span>📁 Всего: <strong>{{ chat.stats.total or 0 }}</strong></span>
+            <span>✅ Загружено: <strong>{{ chat.stats.uploaded or 0 }}</strong></span>
+        </div>
+        <div style="height:8px;background:#0f3460;border-radius:4px"><div style="height:100%;width:{{ chat.scan.percent }}%;background:linear-gradient(90deg,#fdcb6e,#e17055);border-radius:4px"></div></div>
+        <span style="font-size:20px;color:#fdcb6e">{{ "%.0f"|format(chat.scan.percent) }}%</span>
+    </div>
     {% endif %}
 </div>
 {% else %}
