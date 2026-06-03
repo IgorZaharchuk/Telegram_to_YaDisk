@@ -70,20 +70,14 @@ nav{background:#16213e;padding:0 8px;display:flex;gap:2px;flex-wrap:wrap}nav a{c
             <tr><td>🎬 Мин. размер видео (MB)</td><td>{{ settings.get('compression', {}).get('min_video_size_mb', 15) }}</td></tr>
             <tr><td>🖼️ Качество JPEG</td><td>{{ settings.get('compression', {}).get('image_quality', 92) }}</td></tr>
             <tr><td>🎬 CRF видео</td><td>{{ settings.get('compression', {}).get('video_crf', 23) }}</td></tr>
-            <tr><td>🔄 Автозапуск</td><td>{% if auto %}✅ Включён{% else %}❌ Выключен{% endif %}</td></tr>
+            
         </table>
     </div>
 
 <div class="section danger-zone">
         <h3>⚠️ Опасная зона</h3>
         <p style="color:#8892b0;">Эти действия могут повлиять на работу бэкапа. Используйте с осторожностью.</p>
-        
-        <div class="flex" style="margin-bottom:14px">
-            <form method="POST" action="{{ url_for('backup.force_kill') }}" onsubmit="return confirm('Принудительно завершить main.py?')">
-                <button class="btn btn-orange">💀 Force Kill</button>
-            </form>
-        </div>
-        
+                
         <div class="flex" style="margin-bottom:14px; gap:12px;">
             <form method="POST" action="{{ url_for('backup.clear_queue') }}" onsubmit="return confirm('Очистить всю очередь?')">
                 <button class="btn btn-gray">🗑️ Очистить очередь</button>
@@ -94,14 +88,14 @@ nav{background:#16213e;padding:0 8px;display:flex;gap:2px;flex-wrap:wrap}nav a{c
             <form method="POST" action="{{ url_for('backup.clear_errors') }}" onsubmit="return confirm('Очистить все ошибки?')">
                 <button class="btn btn-gray">🗑️ Очистить ошибки</button>
             </form>
-            <form method="POST" action="{{ url_for('backup.refresh_all_cache') }}" onsubmit="return confirm('Обновить кэш всех чатов? Это запустит сканирование.')">
-                <button class="btn btn-blue">🔄 Обновить кэш</button>
-            </form>
+            
         </div>
         
         <div class="flex">
             <form method="POST" action="{{ url_for('backup.reset_all_stats') }}" onsubmit="return confirm('⚠️ Сбросить ВСЮ статистику? Это удалит все чаты, историю, кэш файлов. Необратимо!')">
                 <button class="btn btn-red" style="padding:14px 24px; font-size:20px;">⚠️ Сбросить всю статистику</button>
+            <button class="btn btn-orange" style="margin-left:12px" onclick="document.getElementById('fk-form').submit()">💀 Force Kill</button>
+            <form id="fk-form" method="POST" action="{{ url_for('backup.force_kill') }}" onsubmit="return confirm('Принудительно завершить main.py?')" style="display:none"></form>
             </form>
         </div>
     </div>
