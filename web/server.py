@@ -325,10 +325,13 @@ def queue():
     
     items = []
     for row in c.execute("""
-        SELECT qi.*, qp.worker_type, ap.progress, ap.speed, ap.stage
+        SELECT qi.*, qp.worker_type, ap.progress, ap.speed, ap.stage,
+               cn.name as chat_name, t.topic_name
         FROM queue_items qi
         LEFT JOIN queue_processing qp ON qi.key = qp.key
         LEFT JOIN active_progress ap ON qi.key = ap.key
+        LEFT JOIN chat_names cn ON qi.chat_id = cn.chat_id
+        LEFT JOIN topics t ON qi.chat_id = t.chat_id AND qi.topic_id = t.topic_id
         ORDER BY qi.created_at DESC
         LIMIT ? OFFSET ?
     """, (per_page, offset)):

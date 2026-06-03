@@ -18,7 +18,7 @@
         .btn:disabled{opacity:.4;cursor:not-allowed}
         .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:15px}
         .card{background:#16213e;padding:14px 20px;border-radius:10px;text-align:center;border:1px solid #0f3460}
-        .card .label{font-size:18px;color:#8892b0;margin-bottom:6px}
+        .card .label{font-size:20px;color:#8892b0;margin-bottom:6px}
         .card .num{font-size:32px;font-weight:bold}
         .card .num.green{color:#00b894}.card .num.red{color:#e17055}.card .num.blue{color:#74b9ff}.card .num.orange{color:#fdcb6e}.card .num.purple{color:#a29bfe}
         .section{background:#16213e;padding:16px;border-radius:10px;margin-bottom:15px;border:1px solid #0f3460}
@@ -31,9 +31,9 @@
         .progress-bar{height:10px;background:#0f3460;border-radius:5px;overflow:hidden;margin:6px 0}
         .progress-fill{height:100%;border-radius:5px}
         .progress-fill.download{background:#00b894}.progress-fill.compress{background:#fdcb6e}.progress-fill.upload{background:#74b9ff}
-        table{width:100%;border-collapse:collapse;font-size:18px}
+        table{width:100%;border-collapse:collapse;font-size:20px}
         th,td{padding:8px 10px;border-bottom:1px solid #0f3460;text-align:left}
-        th{color:#8892b0;font-size:18px;text-transform:uppercase;font-weight:700}
+        th{color:#8892b0;font-size:20px;font-weight:700}
         .tag{display:inline-block;padding:4px 10px;border-radius:4px;;margin:2px;font-weight:600}
         .tag-green{background:rgba(0,184,148,.2);color:#00b894}.tag-red{background:rgba(225,112,85,.2);color:#e17055}.tag-blue{background:rgba(116,185,255,.2);color:#74b9ff}
         .flex{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
@@ -66,14 +66,16 @@
     </div>
 
     <div class="cards">
-        <div class="card"><div class="label">ВСЕГО</div><div class="num">{{ stats.total }}</div></div>
-        <div class="card"><div class="label">ЗАГРУЖЕНО</div><div class="num green">{{ stats.uploaded }}</div></div>
-        <div class="card"><div class="label">В ОЧЕРЕДИ</div><div class="num blue">{{ stats.pending }}</div></div>
-        <div class="card"><div class="label">ВЫБРАНО</div><div class="num orange">{{ stats.selected }}</div></div>
-        <div class="card"><div class="label">НОВЫХ</div><div class="num purple">{{ stats.new_files }}</div></div>
-        <div class="card"><div class="label">ОШИБОК</div><div class="num red">{{ stats.errors }}</div></div>
-        <div class="card"><div class="label">ПРОПУЩЕНО</div><div class="num">{{ stats.skipped }}</div></div>
-        <div class="card"><div class="label">НЕ СКАЧАНО</div><div class="num">{{ stats.unloaded }}</div></div>
+        <div class="card"><div class="label">📦 Всего</div><div class="num">{{ stats.total }}</div></div>
+        <div class="card"><div class="label">✅ Загружено</div><div class="num green">{{ stats.uploaded }}</div></div>
+        <div class="card"><div class="label">⏳ В очереди</div><div class="num blue">{{ stats.pending }}</div></div>
+        <div class="card"><div class="label">☑️ Выбрано</div><div class="num orange">{{ stats.selected }}</div></div>
+        <div class="card"><div class="label">🆕 Новых</div><div class="num purple">{{ stats.new_files }}</div></div>
+        <div class="card"><div class="label">❌ Ошибок</div><div class="num red">{{ stats.errors }}</div></div>
+        <div class="card"><div class="label">⏭️ Пропущено</div><div class="num">{{ stats.skipped }}</div></div>
+        <div class="card"><div class="label">⬜ Не скачано</div><div class="num">{{ stats.unloaded }}</div></div>
+        <div class="card"><div class="label">🗜️ Сжато</div><div class="num orange">{{ compressed_count }}</div></div>
+        <div class="card"><div class="label">💾 Экономия</div><div class="num green">{{ fmt_size(saved_bytes) }}</div></div>
     </div>
 
     <div class="cards">
@@ -116,7 +118,7 @@
     <div class="section">
         <h2>📁 Чаты</h2>
         <table>
-            <tr><th>Чат</th><th>Всего</th><th>Загружено</th><th>Ошибки</th><th>Сжато</th><th>Объём</th></tr>
+            <tr><th>📁 Чат</th><th>📦 Всего</th><th>✅ Загружено</th><th>❌ Ошибки</th><th>🗜️ Сжато</th><th>💾 Объём</th></tr>
             {% for c in chat_stats %}
             <tr><td>{{ c.name or 'Чат '~c.chat_id }}</td><td>{{ c.total }}</td><td>{{ c.uploaded }}</td><td>{{ c.errors }}</td><td>{{ c.compressed }}</td><td>{{ fmt_size(c.uploaded_bytes) }} / {{ fmt_size(c.total_bytes) }}</td></tr>
             {% endfor %}

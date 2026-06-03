@@ -1,40 +1,46 @@
 <!DOCTYPE html>
 <html lang="ru">
-<head><meta charset="utf-8"><title>Telegram Backup</title>
-<style>*{box-sizing:border-box}body{font-size:27px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;background:#1a1a2e;color:#eee;;font-weight:600}.container{max-width:100%;margin:15px auto;padding:0 10px}.section{background:#16213e;padding:28px;border-radius:12px;margin-bottom:22px;border:1px solid #0f3460}h1,h2,h3{color:#ccd6f6;font-weight:800}h1{font-size:24px}h2{font-size:33px;;color:#ccd6f6;margin:0 0 8px}h3{font-size:24px}.table-wrap{overflow-x:auto;border-radius:12px}.table-wrap table{width:100%;border-collapse:collapse;font-size:20px;table-layout:auto;min-width:800px;font-weight:700}th,td{padding:10px 10px;border-bottom:1px solid #0f3460;overflow:hidden;text-overflow:ellipsis;max-width:350px;font-weight:700}th{color:#8892b0;font-size:18px;text-transform:uppercase;letter-spacing:1px;font-weight:700}.btn{display:inline-block;padding:12px 28px;border:none;border-radius:8px;cursor:pointer;font-size:22px;font-weight:700;text-decoration:none;margin:3px}.btn-green{background:#00b894;color:#fff}.btn-red{background:#e17055;color:#fff}.btn-blue{background:#0984e3;color:#fff}.btn-gray{background:#636e72;color:#fff}.btn-purple{background:#6c5ce7;color:#fff}.tag{display:inline-block;padding:4px 10px;border-radius:4px;;margin:2px;font-weight:600}.tag-green{background:rgba(0,184,148,.2);color:#00b894}.tag-red{background:rgba(225,112,85,.2);color:#e17055}.tag-blue{background:rgba(116,185,255,.2);color:#74b9ff}.pag{display:flex;gap:14px;justify-content:center;margin:25px 0}.pag a{display:inline-block;padding:12px 28px;border:none;border-radius:8px;cursor:pointer;font-size:22px;font-weight:700;text-decoration:none;margin:3px}.pag span{padding:12px 24px;color:#8892b0;font-size:21px;font-weight:700}.filters{background:#16213e;padding:8px 10px;border-radius:8px;margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap;align-items:center;border:1px solid #0f3460}.filters a{font-size:25px;padding:4px 8px;border-radius:4px;;text-decoration:none;background:#1a2744;color:#a8b2d1;font-weight:600}.filters a.active{background:#0984e3;color:#fff}input,select{padding:12px 16px;border:1px solid #0f3460;border-radius:8px;background:#1a2744;color:#eee;font-size:20px;font-weight:700}.flex{display:flex;gap:14px;flex-wrap:wrap;align-items:center}pre{background:#0a0a1a;padding:22px;border-radius:10px;overflow:auto;font-size:19px;line-height:1.6;white-space:pre-wrap;word-break:break-all;font-weight:700}.tabs{display:flex;gap:8px;margin-bottom:20px}.tabs a{padding:12px 24px;background:#1a2744;text-decoration:none;color:#a8b2d1;border-radius:8px 8px 0 0;font-size:20px;font-weight:700}.tabs a.active{background:#0984e3;color:#fff}p{font-size:21px;font-weight:700}strong{font-size:25px;color:#8892b0;}
-
-
-nav{background:#16213e;padding:0 8px;display:flex;gap:2px;flex-wrap:wrap}nav a{color:#a8b2d1;text-decoration:none;padding:10px 8px;font-size:23px;font-weight:700;white-space:nowrap}nav a:hover,nav a.active{background:#0f3460;color:#e94560}/* На Full HD и шире — уменьшаем всю страницу */
-@media(min-width:1400px){
-    body{font-size:27px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;background:#1a1a2e;color:#eee;;font-weight:600}
-}
-@media(min-width:2560px){
-    body{font-size:27px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;background:#1a1a2e;color:#eee;;font-weight:600}
-}
-</style>
+<head><meta charset="utf-8"><title>Очередь — Telegram Backup</title>
+<style>
+*{box-sizing:border-box}body{font-size:27px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;background:#1a1a2e;color:#eee;;font-weight:600}nav{background:#16213e;padding:0 8px;display:flex;gap:2px;flex-wrap:wrap}nav a:hover,nav a.active{background:#0f3460;color:#e94560}.container{max-width:1200px;margin:30px auto;padding:0 30px}h1{font-size:32px;color:#ccd6f6;font-weight:800}.section{background:#16213e;padding:20px;border-radius:10px;margin-bottom:10px;border:1px solid #0f3460}.event{position:relative;padding:16px 20px;background:#16213e;border-radius:10px;margin-bottom:8px;border:1px solid #0f3460}.event:hover{background:#1a2744}.event-file{font-size:22px;font-weight:700;color:#ccd6f6;word-break:break-all}.event-meta{font-size:19px;color:#a8b2d1;margin-top:4px}.tag{display:inline-block;padding:4px 10px;border-radius:4px;font-size:18px;margin:2px;font-weight:600}.tag-blue{background:rgba(116,185,255,.2);color:#74b9ff}.pag{display:flex;gap:14px;justify-content:center;margin:25px 0}.pag a{padding:12px 24px;background:#0984e3;color:#fff;text-decoration:none;border-radius:8px;font-size:19px;font-weight:700}.pag span{padding:12px 24px;color:#8892b0;font-size:19px;font-weight:700}
+nav{background:#16213e;padding:0 8px;display:flex;gap:2px;flex-wrap:wrap}nav a{color:#a8b2d1;text-decoration:none;padding:10px 8px;font-size:23px;font-weight:700;white-space:nowrap}nav a:hover,nav a.active{background:#0f3460;color:#e94560}</style>
 </head>
 <body>
 {% include "_nav.html" %}
 <div class="container">
-<h1>📋 Очередь ({{ total }})</h1>
-{% if status_counts %}
-<p>{% for s, c in status_counts.items() %}<span class="tag tag-blue">{{ s }}: {{ c }}</span> {% endfor %}</p>
-{% endif %}
-<div class="table-wrap"><table>
-<tr><th>Файл</th><th>Тип</th><th>Размер</th><th>Статус</th><th>Прогресс</th></tr>
-{% for item in items %}
-<tr>
-<td>{{ item.filename[:50] }}</td><td>{{ item.file_type }}</td><td>{{ fmt_size(item.file_size) }}</td>
-<td>{{ item.status }}</td>
-<td>{% if item.progress %}{{ "%.0f"|format(item.progress) }}%{% endif %}</td>
-</tr>
-{% endfor %}
-</table></div>
-{% if total_pages > 1 %}
-<div class="pag">
-{% if page > 1 %}<a href="?page={{ page-1 }}">◀</a>{% endif %}
-<span>{{ page }}/{{ total_pages }}</span>
-{% if page < total_pages %}<a href="?page={{ page+1 }}">▶</a>{% endif %}
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <h1 style="margin:0">📋 Очередь ({{ total }})</h1>
+        {% if total_pages > 1 %}
+        <div class="pag" style="margin:0">
+        {% if page > 1 %}<a href="?page={{ page-1 }}">◀</a>{% endif %}
+        <span>{{ page }}/{{ total_pages }}</span>
+        {% if page < total_pages %}<a href="?page={{ page+1 }}">▶</a>{% endif %}
+        </div>
+        {% endif %}
+    </div>
+    
+    {% if status_counts %}
+    <p style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+        {% for s, c in status_counts.items() %}
+        {% set labels = {'pending_check': '🔍 Проверка', 'pending_download': '📥 Скачивание', 'pending_compress': '🗜️ Сжатие', 'pending_upload': '📤 Загрузка', 'completed': '✅ Завершено', 'failed': '❌ Ошибка'} %}
+        <span class="tag tag-blue" style="font-size:20px">{{ labels.get(s, s) }}: {{ c }}</span>
+        {% endfor %}
+    </p>
+    {% endif %}
+    
+    {% for item in items %}
+    <div class="event">
+        <div class="event-file">📄 {{ item.filename[:80] }}</div>
+        <div class="event-meta">
+            📁 {{ item.chat_name or 'Chat '~item.chat_id }}
+            {% if item.topic_name %} › 📂 {{ item.topic_name }}{% endif %}
+            • {{ fmt_size(item.file_size or 0) }}
+            • 
+            {% set labels = {'pending_check': '🔍 Проверка', 'pending_download': '📥 Скачивание', 'pending_compress': '🗜️ Сжатие', 'pending_upload': '📤 Загрузка', 'completed': '✅ Завершено', 'failed': '❌ Ошибка'} %}
+            <span class="tag tag-blue">{{ labels.get(item.status, item.status) }}</span>
+        </div>
+    </div>
+    {% endfor %}
 </div>
-{% endif %}
-</div></body></html>
+</body>
+</html>
