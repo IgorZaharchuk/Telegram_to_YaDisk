@@ -93,9 +93,12 @@ nav{background:#16213e;padding:0 8px;display:flex;gap:2px;flex-wrap:wrap}nav a{c
         
         <div class="flex">
             <form method="POST" action="{{ url_for('backup.reset_all_stats') }}" onsubmit="return confirm('⚠️ Сбросить ВСЮ статистику? Это удалит все чаты, историю, кэш файлов. Необратимо!')">
+                <form method="POST" action="{{ url_for('backup.reset_all_stats') }}" onsubmit="return confirm('⚠️ Сбросить ВСЮ статистику?')" style="display:inline">
                 <button class="btn btn-red" style="padding:14px 24px; font-size:20px;">⚠️ Сбросить всю статистику</button>
-            <button class="btn btn-orange" style="margin-left:12px" onclick="document.getElementById('fk-form').submit()">💀 Force Kill</button>
-            <form id="fk-form" method="POST" action="{{ url_for('backup.force_kill') }}" onsubmit="return confirm('Принудительно завершить main.py?')" style="display:none"></form>
+            </form>
+            <form method="POST" action="{{ url_for('backup.force_kill') }}" onsubmit="return confirm('Принудительно завершить main.py?')" style="display:inline; margin-left:12px">
+                <button class="btn btn-orange">💀 Force Kill</button>
+            </form>
             </form>
         </div>
     </div>

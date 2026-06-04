@@ -746,15 +746,12 @@ class FileProcessor:
                     raise Exception("Invalid/corrupted image file")
 
             elif await self.db.is_video(item.filename):
+                # Ждём дописывания, проверяем, при ошибке загружаем оригинал
+                file_size = os.path.getsize(path) if os.path.exists(path) else 0
+                if 0 < file_size < (item.file_size or 0):
+                    await asyncio.sleep(3)
                 if not await is_valid_video(path):
-                    os.unlink(path)
-                    await self.db.record_file_error(
-                        chat_id=item.chat_id, message_id=item.message_id,
-                        filename=item.filename, stage='upload_validation',
-                        error="Invalid/corrupted video file",
-                        topic_id=item.topic_id, chat_name=chat_name, topic_name=topic_name
-                    )
-                    raise Exception("Invalid/corrupted video file")
+                    logger.warning(f"⚠️ {item.filename} не прошёл ffprobe, загружаем оригинал без сжатия")
 
             last_update = [0.0]  # mutable для замыкания
             
