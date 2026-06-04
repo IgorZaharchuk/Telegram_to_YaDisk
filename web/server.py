@@ -94,7 +94,7 @@ STATUS_NAMES = {'all': 'Все', 'uploaded': 'Загружено', 'unuploaded':
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA busy_timeout=1000")
     return conn
 
 def fmt_size(b):
@@ -161,14 +161,13 @@ def get_chat_ids_from_settings():
 
 @backup_bp.route('/api/status')
 def api_status():
-    """JSON API для автообновления дашборда."""
     conn = get_db()
     c = conn.cursor()
     
     running = is_running()
     age = get_heartbeat_age() if running else 0
     
-    # Общая статистика
+    # Только основные цифры
     total = c.execute("SELECT COUNT(*) FROM files").fetchone()[0]
     uploaded = c.execute("SELECT COUNT(*) FROM files WHERE state=?", (STATE_UPLOADED,)).fetchone()[0]
     new_files = c.execute("SELECT COUNT(*) FROM files WHERE state=?", (STATE_NEW,)).fetchone()[0]
@@ -177,61 +176,37 @@ def api_status():
     skipped = c.execute("SELECT COUNT(*) FROM files WHERE state=?", (STATE_SKIPPED,)).fetchone()[0]
     unloaded = c.execute("SELECT COUNT(*) FROM files WHERE state=?", (STATE_UNLOADED,)).fetchone()[0]
     
-    # Очередь
     queue_counts = {}
     for row in c.execute("SELECT status, COUNT(*) as cnt FROM queue_items GROUP BY status"):
         queue_counts[row['status']] = row['cnt']
     pending = sum(queue_counts.get(s, 0) for s in (STATUS_PENDING_CHECK, STATUS_PENDING_DOWNLOAD, STATUS_PENDING_COMPRESS, STATUS_PENDING_UPLOAD))
     
-    # Активные операции
     active = []
-    downloading = []
-    compressing = []
-    uploading = []
-    for row in c.execute("""
-        SELECT qi.filename, qi.file_size, qi.file_type, qp.worker_type, 
-               ap.progress, ap.speed, ap.eta, ap.stage, ap.downloaded, ap.uploaded, ap.total_size
-        FROM queue_items qi
-        JOIN queue_processing qp ON qi.key = qp.key
-        LEFT JOIN active_progress ap ON qi.key = ap.key
-        ORDER BY qp.started_at
-    """):
-        item = dict(row)
-        active.append(item)
-        wt = item.get('worker_type', '')
-        if wt == 'download': downloading.append(item)
-        elif wt in ('compress_photo', 'compress_video'): compressing.append(item)
-        elif wt == 'upload': uploading.append(item)
+    for row in c.execute("SELECT qi.filename, qi.file_size, qp.worker_type, ap.progress, ap.speed, ap.eta FROM queue_items qi JOIN queue_processing qp ON qi.key = qp.key LEFT JOIN active_progress ap ON qi.key = ap.key"):
+        active.append(dict(row))
     
-    # Сжатие
+    downloading = [a for a in active if a['worker_type'] == 'download']
+    compressing = [a for a in active if a['worker_type'] in ('compress_photo', 'compress_video')]
+    uploading = [a for a in active if a['worker_type'] == 'upload']
+    
     cs = c.execute("SELECT * FROM stage_stats WHERE stage='compress'").fetchone()
     saved_bytes = cs['saved_bytes'] if cs else 0
     compressed_count = cs['processed'] if cs else 0
     
-    # Сессионные счётчики
     session = get_session_stats()
     
-    # Прогресс сканирования
     scan_progress = {}
     for row in c.execute("SELECT * FROM scan_progress WHERE completed=0"):
         scan_progress[str(row['chat_id'])] = dict(row)
     
-    # Ошибки
     file_err_count = c.execute("SELECT COUNT(*) FROM file_errors").fetchone()[0]
     sys_err_count = c.execute("SELECT COUNT(*) FROM system_errors").fetchone()[0]
     
-    # Статистика чатов
     chat_stats = []
-    for row in c.execute("""
-        SELECT cs.*, cn.name 
-        FROM chat_stats cs 
-        LEFT JOIN chat_names cn ON cs.chat_id = cn.chat_id 
-        ORDER BY cs.uploaded DESC
-    """):
+    for row in c.execute("SELECT cs.*, cn.name FROM chat_stats cs LEFT JOIN chat_names cn ON cs.chat_id = cn.chat_id ORDER BY cs.uploaded DESC LIMIT 10"):
         chat_stats.append(dict(row))
     
-    conn.close()
-    
+    # Системная информация
     import shutil
     disk = shutil.disk_usage(PROJECT_DIR)
     mem_total = mem_avail = 0
@@ -256,14 +231,30 @@ def api_status():
                     net_tx += int(parts[9])
     except: pass
     
+    conn.close()
+    
+    # Кэш системных данных на 5 секунд
+    global _sys_cache
+    now = time.time()
+    if '_sys_cache' not in dir():
+        _sys_cache = {'data': None, 'time': 0}
+    if _sys_cache['data'] and now - _sys_cache['time'] < 5:
+        sys_data = _sys_cache['data']
+    else:
+        sys_data = {
+            'disk_free': disk.free,
+            'mem_avail': mem_avail,
+            'mem_total': mem_total,
+            'load': [float(x) for x in load],
+            'net_rx': net_rx,
+            'net_tx': net_tx
+        }
+        _sys_cache = {'data': sys_data, 'time': now}
+    
     return jsonify({
         'running': running,
         'heartbeat_age': round(age, 1),
-        'stats': {
-            'total': total, 'uploaded': uploaded, 'new_files': new_files,
-            'errors': errors, 'selected': selected, 'skipped': skipped,
-            'unloaded': unloaded, 'pending': pending
-        },
+        'stats': {'total': total, 'uploaded': uploaded, 'new_files': new_files, 'errors': errors, 'selected': selected, 'skipped': skipped, 'unloaded': unloaded, 'pending': pending},
         'session': session,
         'queue_counts': queue_counts,
         'active': active,
@@ -274,19 +265,10 @@ def api_status():
         'saved_bytes': saved_bytes,
         'file_err_count': file_err_count,
         'sys_err_count': sys_err_count,
-        'system': {
-            'disk_free': disk.free,
-            'mem_avail': mem_avail,
-            'mem_total': mem_total,
-            'load': [float(x) for x in load],
-            'net_rx': net_rx,
-            'net_tx': net_tx
-        },
         'scan_progress': scan_progress,
-        'chat_stats': chat_stats
+        'chat_stats': chat_stats,
+        'system': sys_data
     })
-
-# ==================== СТРАНИЦЫ ====================
 
 @backup_bp.route('/')
 def index():
