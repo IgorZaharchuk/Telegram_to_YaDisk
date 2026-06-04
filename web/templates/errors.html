@@ -1,35 +1,77 @@
 <!DOCTYPE html>
 <html lang="ru">
-<head><meta charset="utf-8"><title>Telegram Backup</title>
-<style>*{box-sizing:border-box}body{font-size:27px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;background:#1a1a2e;color:#eee;;font-weight:600}.container{max-width:100%;margin:15px auto;padding:0 10px}.section{background:#16213e;padding:28px;border-radius:12px;margin-bottom:22px;border:1px solid #0f3460}h1,h2,h3{color:#ccd6f6;font-weight:800}h1{font-size:32px}h2{font-size:33px;;color:#ccd6f6;margin:0 0 8px}h3{font-size:24px}.table-wrap{overflow-x:auto;border-radius:12px}.table-wrap table{width:100%;border-collapse:collapse;font-size:20px;table-layout:auto;min-width:800px;font-weight:700}th,td{padding:10px 10px;border-bottom:1px solid #0f3460;overflow:hidden;text-overflow:ellipsis;max-width:350px;font-weight:700}th{color:#8892b0;font-size:18px;text-transform:uppercase;letter-spacing:1px;font-weight:700}.btn{display:inline-block;padding:12px 28px;border:none;border-radius:8px;cursor:pointer;font-size:22px;font-weight:700;text-decoration:none;margin:3px}.btn-green{background:#00b894;color:#fff}.btn-red{background:#e17055;color:#fff}.btn-blue{background:#0984e3;color:#fff}.btn-gray{background:#636e72;color:#fff}.btn-purple{background:#6c5ce7;color:#fff}.tag{display:inline-block;padding:4px 10px;border-radius:4px;;margin:2px;font-weight:600}.tag-green{background:rgba(0,184,148,.2);color:#00b894}.tag-red{background:rgba(225,112,85,.2);color:#e17055}.tag-blue{background:rgba(116,185,255,.2);color:#74b9ff}.pag{display:flex;gap:14px;justify-content:center;margin:25px 0}.pag a{display:inline-block;padding:12px 28px;border:none;border-radius:8px;cursor:pointer;font-size:22px;font-weight:700;text-decoration:none;margin:3px}.pag span{padding:12px 24px;color:#8892b0;font-size:21px;font-weight:700}.filters{background:#16213e;padding:8px 10px;border-radius:8px;margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap;align-items:center;border:1px solid #0f3460}.filters a{font-size:25px;padding:4px 8px;border-radius:4px;;text-decoration:none;background:#1a2744;color:#a8b2d1;font-weight:600}.filters a.active{background:#0984e3;color:#fff}input,select{padding:12px 16px;border:1px solid #0f3460;border-radius:8px;background:#1a2744;color:#eee;font-size:20px;font-weight:700}.flex{display:flex;gap:14px;flex-wrap:wrap;align-items:center}pre{background:#0a0a1a;padding:22px;border-radius:10px;overflow:auto;font-size:19px;line-height:1.6;white-space:pre-wrap;word-break:break-all;font-weight:700}.tabs{display:flex;gap:8px;margin-bottom:20px}.tabs a{padding:12px 24px;background:#1a2744;text-decoration:none;color:#a8b2d1;border-radius:8px 8px 0 0;font-size:20px;font-weight:700}.tabs a.active{background:#0984e3;color:#fff}p{font-size:21px;font-weight:700}strong{font-size:25px;color:#8892b0;}
-
-
-nav{background:#16213e;padding:0 8px;display:flex;gap:2px;flex-wrap:wrap}nav a{color:#a8b2d1;text-decoration:none;padding:10px 8px;font-size:23px;font-weight:700;white-space:nowrap}nav a:hover,nav a.active{background:#0f3460;color:#e94560}/* На Full HD и шире — уменьшаем всю страницу */
-@media(min-width:1400px){
-    body{font-size:27px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;background:#1a1a2e;color:#eee;;font-weight:600}
-}
-@media(min-width:2560px){
-    body{font-size:27px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;background:#1a1a2e;color:#eee;;font-weight:600}
-}
+<head><meta charset="utf-8"><title>Ошибки — Telegram Backup</title>
+<style>
+*{box-sizing:border-box}body{font-size:27px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;background:#1a1a2e;color:#eee;;font-weight:600}
+nav{background:#16213e;padding:0 8px;display:flex;gap:2px;flex-wrap:wrap}nav a{color:#a8b2d1;text-decoration:none;padding:10px 8px;font-size:23px;font-weight:700;white-space:nowrap}nav a:hover,nav a.active{background:#0f3460;color:#e94560}
+.container{max-width:1200px;margin:30px auto;padding:0 30px}
+h1{font-size:32px;color:#ccd6f6;font-weight:800}
+.section{background:#16213e;padding:20px;border-radius:10px;margin-bottom:15px;border:1px solid #0f3460}
+.section h2{margin:0 0 12px;font-size:26px;color:#ccd6f6}
+.event{position:relative;padding:16px 20px;background:#16213e;border-radius:10px;margin-bottom:8px;border:1px solid #0f3460;border-left:3px solid #e17055}
+.event:hover{background:#1a2744}
+.event-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.event-date{font-size:20px;color:#8892b0}
+.event-file{font-size:24px;font-weight:700;color:#ccd6f6;word-break:break-all}
+.event-meta{font-size:21px;color:#a8b2d1;margin-top:4px}
+.event-chat{color:#74b9ff}
+.error-list{margin-top:6px}
+.error-item{font-size:17px;color:#e17055;padding:3px 0}
+.error-stage{color:#fdcb6e}
+.btn{display:inline-block;padding:12px 28px;border:none;border-radius:8px;cursor:pointer;font-size:22px;font-weight:700;text-decoration:none;margin:3px}
+.btn-red{background:#e17055;color:#fff}
 </style>
 </head>
 <body>
 {% include "_nav.html" %}
 <div class="container">
-<h1>⚠️ Ошибки</h1>
-<form method="POST" action="{{ url_for('backup.clear_errors') }}"><button class="btn btn-red">🗑️ Очистить все ошибки</button></form>
-{% if file_errs %}
-<div class="section"><h2>Ошибки файлов ({{ file_errs|length }})</h2>
-<div class="table-wrap"><table><tr><th>Время</th><th>Чат</th><th>Тема</th><th>Файл</th><th>Этап</th><th>Ошибка</th></tr>
-{% for e in file_errs %}
-<tr><td>{{ e.timestamp }}</td><td>{{ e.chat_name or e.chat_id }}</td><td>{{ e.topic_name or e.topic_id }}</td><td>{{ e.filename[:40] }}</td><td>{{ e.stage }}</td><td style="color:#e17055">{{ e.error[:120] }}</td></tr>
-{% endfor %}</table></div></div>
-{% endif %}
-{% if sys_errs %}
-<div class="section"><h2>Системные ошибки ({{ sys_errs|length }})</h2>
-<div class="table-wrap"><table><tr><th>Время</th><th>Компонент</th><th>Ошибка</th></tr>
-{% for e in sys_errs %}
-<tr><td>{{ e.timestamp }}</td><td>{{ e.component }}</td><td style="color:#e17055">{{ e.error[:120] }}</td></tr>
-{% endfor %}</table></div></div>
-{% endif %}
-</div></body></html>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <h1 style="margin:0">⚠️ Ошибки</h1>
+        <form method="POST" action="{{ url_for('backup.clear_errors') }}">
+            <button class="btn btn-red">🗑️ Очистить все ошибки</button>
+        </form>
+    </div>
+
+    {% if file_errs %}
+    <div class="section">
+        <h2>📄 Ошибки файлов ({{ file_errs|length }})</h2>
+        {% for item in file_errs %}
+        <div class="event">
+            <div class="event-header">
+                <span class="event-date">{{ item.date_str }}</span>
+                <span style="color:#e17055;font-size:14px">{{ item.errors|length }} ошибок</span>
+            </div>
+            <div class="event-file">📄 {{ item.filename[:80] }}</div>
+            <div class="event-meta">
+                <span class="event-chat">📁 {{ item.chat_name or 'Chat '~item.chat_id }}</span>
+                {% if item.topic_name and item.topic_name != 'General' %}
+                <span> › 📂 {{ item.topic_name }}</span>
+                {% endif %}
+            </div>
+            <div class="error-list">
+                {% for err in item.errors %}
+                <div class="error-item"><span class="error-stage">{{ err.stage }}</span>: {{ err.error[:120] }}</div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if sys_errs %}
+    <div class="section">
+        <h2>⚙️ Системные ошибки ({{ sys_errs|length }})</h2>
+        {% for e in sys_errs %}
+        <div class="event">
+            <div class="event-header">
+                <span class="event-date">{{ e.date_str or e.timestamp }}</span>
+            </div>
+            <div class="event-file">⚙️ {{ e.component }}</div>
+            <div class="event-meta" style="color:#e17055">{{ e.error[:200] }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+</body>
+</html>

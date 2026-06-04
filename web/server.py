@@ -433,8 +433,24 @@ def logs():
 def errors_view():
     conn = get_db()
     c = conn.cursor()
-    file_errs = [dict(r) for r in c.execute("SELECT * FROM file_errors ORDER BY timestamp DESC LIMIT 200")]
+    file_rows = c.execute("SELECT * FROM file_errors ORDER BY timestamp DESC LIMIT 300").fetchall()
     sys_errs = [dict(r) for r in c.execute("SELECT * FROM system_errors ORDER BY timestamp DESC LIMIT 100")]
+    
+    # Группируем ошибки файлов
+    from datetime import datetime
+    grouped_files = {}
+    for row in file_rows:
+        item = dict(row)
+        key = f"{item['chat_id']}_{item['message_id']}"
+        ts = item.get('timestamp')
+        item['date_str'] = datetime.fromtimestamp(ts).strftime('%d.%m.%Y %H:%M:%S') if ts and ts > 1000000000 else str(ts)
+        if key not in grouped_files:
+            item['errors'] = [{'stage': item['stage'], 'error': item['error']}]
+            grouped_files[key] = item
+        else:
+            grouped_files[key]['errors'].append({'stage': item['stage'], 'error': item['error']})
+    
+    file_errs = sorted(grouped_files.values(), key=lambda x: x['timestamp'], reverse=True)[:100]
     conn.close()
     return render_template('errors.html', file_errs=file_errs, sys_errs=sys_errs)
 
