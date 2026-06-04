@@ -626,7 +626,7 @@ class Compressor:
         cmd: List[str] = []
         
         if self.use_cpulimit and self.video_cpu_limit < 100 and shutil.which('cpulimit'):
-            cmd.extend(['cpulimit', '-l', str(min(self.video_cpu_limit * CPU_COUNT, 800)), '--'])
+            cmd.extend(['cpulimit', '-m', '-l', str(min(self.video_cpu_limit * CPU_COUNT, 800)), '--'])
         
         if self.low_priority:
             if shutil.which('nice'):
