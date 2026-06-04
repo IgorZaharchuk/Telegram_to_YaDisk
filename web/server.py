@@ -232,6 +232,30 @@ def api_status():
     
     conn.close()
     
+    import shutil
+    disk = shutil.disk_usage(PROJECT_DIR)
+    mem_total = mem_avail = 0
+    try:
+        with open('/proc/meminfo') as f:
+            for line in f:
+                if 'MemTotal' in line: mem_total = int(line.split()[1]) * 1024
+                if 'MemAvailable' in line: mem_avail = int(line.split()[1]) * 1024
+    except: pass
+    load = ['0','0','0']
+    try:
+        with open('/proc/loadavg') as f:
+            load = f.read().split()[:3]
+    except: pass
+    net_rx = net_tx = 0
+    try:
+        with open('/proc/net/dev') as f:
+            for line in f:
+                if 'eth0' in line or 'ens' in line or 'enp' in line:
+                    parts = line.split()
+                    net_rx += int(parts[1])
+                    net_tx += int(parts[9])
+    except: pass
+    
     return jsonify({
         'running': running,
         'heartbeat_age': round(age, 1),
@@ -250,6 +274,14 @@ def api_status():
         'saved_bytes': saved_bytes,
         'file_err_count': file_err_count,
         'sys_err_count': sys_err_count,
+        'system': {
+            'disk_free': disk.free,
+            'mem_avail': mem_avail,
+            'mem_total': mem_total,
+            'load': [float(x) for x in load],
+            'net_rx': net_rx,
+            'net_tx': net_tx
+        },
         'scan_progress': scan_progress,
         'chat_stats': chat_stats
     })
@@ -953,7 +985,31 @@ def yadisk_links():
     """Возвращает прямые ссылки для списка файлов."""
     paths = request.args.get('paths', '').split(',')
     if not paths or not YA_TOKEN:
-        return jsonify({})
+        import shutil
+    disk = shutil.disk_usage(PROJECT_DIR)
+    mem_total = mem_avail = 0
+    try:
+        with open('/proc/meminfo') as f:
+            for line in f:
+                if 'MemTotal' in line: mem_total = int(line.split()[1]) * 1024
+                if 'MemAvailable' in line: mem_avail = int(line.split()[1]) * 1024
+    except: pass
+    load = ['0','0','0']
+    try:
+        with open('/proc/loadavg') as f:
+            load = f.read().split()[:3]
+    except: pass
+    net_rx = net_tx = 0
+    try:
+        with open('/proc/net/dev') as f:
+            for line in f:
+                if 'eth0' in line or 'ens' in line or 'enp' in line:
+                    parts = line.split()
+                    net_rx += int(parts[1])
+                    net_tx += int(parts[9])
+    except: pass
+    
+    return jsonify({})
     
     headers = {'Authorization': f'OAuth {YA_TOKEN}'}
     result = {}
