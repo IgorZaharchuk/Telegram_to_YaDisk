@@ -64,19 +64,19 @@ h2{font-size:33px;;color:#ccd6f6;margin:0 0 8px}
             <input type="hidden" name="order" value="{{ sort_order }}">
             <button type="submit" class="act-btn">⬜ Снять</button>
         </form>
+        <form method="POST" action="{{ url_for('backup.select_unuploaded_files', chat_id=chat_id, topic_id=topic_id) }}" style="display:inline">
+            <input type="hidden" name="type" value="{{ type_filter }}">
+            <input type="hidden" name="status" value="{{ status_filter }}">
+            <input type="hidden" name="sort" value="{{ sort_by }}">
+            <input type="hidden" name="order" value="{{ sort_order }}">
+            <button type="submit" class="act-btn">☑️ Выбрать</button>
+        </form>
         <form method="POST" action="{{ url_for('backup.select_new_files', chat_id=chat_id, topic_id=topic_id) }}" style="display:inline">
             <input type="hidden" name="type" value="{{ type_filter }}">
             <input type="hidden" name="status" value="{{ status_filter }}">
             <input type="hidden" name="sort" value="{{ sort_by }}">
             <input type="hidden" name="order" value="{{ sort_order }}">
             <button type="submit" class="act-btn">🆕 Новые</button>
-        </form>
-        <form method="POST" action="{{ url_for('backup.select_unuploaded_files', chat_id=chat_id, topic_id=topic_id) }}" style="display:inline">
-            <input type="hidden" name="type" value="{{ type_filter }}">
-            <input type="hidden" name="status" value="{{ status_filter }}">
-            <input type="hidden" name="sort" value="{{ sort_by }}">
-            <input type="hidden" name="order" value="{{ sort_order }}">
-            <button type="submit" class="act-btn">⬜ Нескачанные</button>
         </form>
         <form method="POST" action="{{ url_for('backup.reset_topic_errors', chat_id=chat_id, topic_id=topic_id) }}" style="display:inline">
             <input type="hidden" name="type" value="{{ type_filter }}">
