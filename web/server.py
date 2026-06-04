@@ -159,120 +159,54 @@ def get_chat_ids_from_settings():
 
 # ==================== API для автообновления ====================
 
+_api_cache = {'data': None, 'time': 0}
+
 @backup_bp.route('/api/status')
 def api_status():
-    conn = get_db()
-    c = conn.cursor()
-    
-    running = is_running()
-    age = get_heartbeat_age() if running else 0
-    
-    # Только основные цифры
-    total = c.execute("SELECT COUNT(*) FROM files").fetchone()[0]
-    uploaded = c.execute("SELECT COUNT(*) FROM files WHERE state=?", (STATE_UPLOADED,)).fetchone()[0]
-    new_files = c.execute("SELECT COUNT(*) FROM files WHERE state=?", (STATE_NEW,)).fetchone()[0]
-    errors = c.execute("SELECT COUNT(*) FROM files WHERE state=?", (STATE_ERROR,)).fetchone()[0]
-    selected = c.execute("SELECT COUNT(*) FROM files WHERE state=?", (STATE_SELECTED,)).fetchone()[0]
-    skipped = c.execute("SELECT COUNT(*) FROM files WHERE state=?", (STATE_SKIPPED,)).fetchone()[0]
-    unloaded = c.execute("SELECT COUNT(*) FROM files WHERE state=?", (STATE_UNLOADED,)).fetchone()[0]
-    
-    queue_counts = {}
-    for row in c.execute("SELECT status, COUNT(*) as cnt FROM queue_items GROUP BY status"):
-        queue_counts[row['status']] = row['cnt']
-    pending = sum(queue_counts.get(s, 0) for s in (STATUS_PENDING_CHECK, STATUS_PENDING_DOWNLOAD, STATUS_PENDING_COMPRESS, STATUS_PENDING_UPLOAD))
-    
-    active = []
-    for row in c.execute("SELECT qi.filename, qi.file_size, qp.worker_type, ap.progress, ap.speed, ap.eta FROM queue_items qi JOIN queue_processing qp ON qi.key = qp.key LEFT JOIN active_progress ap ON qi.key = ap.key"):
-        active.append(dict(row))
-    
-    downloading = [a for a in active if a['worker_type'] == 'download']
-    compressing = [a for a in active if a['worker_type'] in ('compress_photo', 'compress_video')]
-    uploading = [a for a in active if a['worker_type'] == 'upload']
-    
-    cs = c.execute("SELECT * FROM stage_stats WHERE stage='compress'").fetchone()
-    saved_bytes = cs['saved_bytes'] if cs else 0
-    compressed_count = cs['processed'] if cs else 0
-    
-    session = get_session_stats()
-    
-    scan_progress = {}
-    for row in c.execute("SELECT * FROM scan_progress WHERE completed=0"):
-        scan_progress[str(row['chat_id'])] = dict(row)
-    
-    file_err_count = c.execute("SELECT COUNT(*) FROM file_errors").fetchone()[0]
-    sys_err_count = c.execute("SELECT COUNT(*) FROM system_errors").fetchone()[0]
-    
-    chat_stats = []
-    for row in c.execute("SELECT cs.*, cn.name FROM chat_stats cs LEFT JOIN chat_names cn ON cs.chat_id = cn.chat_id ORDER BY cs.uploaded DESC LIMIT 10"):
-        chat_stats.append(dict(row))
-    
-    # Системная информация
-    import shutil
-    disk = shutil.disk_usage(PROJECT_DIR)
-    mem_total = mem_avail = 0
-    try:
-        with open('/proc/meminfo') as f:
-            for line in f:
-                if 'MemTotal' in line: mem_total = int(line.split()[1]) * 1024
-                if 'MemAvailable' in line: mem_avail = int(line.split()[1]) * 1024
-    except: pass
-    load = ['0','0','0']
-    try:
-        with open('/proc/loadavg') as f:
-            load = f.read().split()[:3]
-    except: pass
-    net_rx = net_tx = 0
-    try:
-        with open('/proc/net/dev') as f:
-            for line in f:
-                if 'eth0' in line or 'ens' in line or 'enp' in line:
-                    parts = line.split()
-                    net_rx += int(parts[1])
-                    net_tx += int(parts[9])
-    except: pass
-    
-    conn.close()
-    
-    # Кэш системных данных на 5 секунд
-    global _sys_cache
+    global _api_cache
     now = time.time()
-    if '_sys_cache' not in dir():
-        _sys_cache = {'data': None, 'time': 0}
-    if _sys_cache['data'] and now - _sys_cache['time'] < 5:
-        sys_data = _sys_cache['data']
-    else:
-        sys_data = {
-            'disk_free': disk.free,
-            'mem_avail': mem_avail,
-            'mem_total': mem_total,
-            'load': [float(x) for x in load],
-            'net_rx': net_rx,
-            'net_tx': net_tx
-        }
-        _sys_cache = {'data': sys_data, 'time': now}
+    if _api_cache['data'] and now - _api_cache['time'] < 2:
+        return jsonify(_api_cache['data'])
     
-    return jsonify({
-        'running': running,
-        'heartbeat_age': round(age, 1),
-        'stats': {'total': total, 'uploaded': uploaded, 'new_files': new_files, 'errors': errors, 'selected': selected, 'skipped': skipped, 'unloaded': unloaded, 'pending': pending},
-        'session': session,
-        'queue_counts': queue_counts,
-        'active': active,
-        'downloading': downloading,
-        'compressing': compressing,
-        'uploading': uploading,
-        'compressed_count': compressed_count,
-        'saved_bytes': saved_bytes,
-        'file_err_count': file_err_count,
-        'sys_err_count': sys_err_count,
-        'scan_progress': scan_progress,
-        'chat_stats': chat_stats,
-        'system': sys_data
-    })
-
-@backup_bp.route('/')
-def index():
-    return redirect(url_for('backup.dashboard'))
+    import asyncio
+    from database import get_db as get_async_db
+    
+    async def get_status():
+        db = await get_async_db()
+        return await db.generate_bot_status()
+    
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        status = loop.run_until_complete(get_status())
+        loop.close()
+        _api_cache = {'data': status, 'time': time.time()}
+        import shutil
+        disk = shutil.disk_usage(PROJECT_DIR)
+        mem_avail = 0
+        try:
+            with open('/proc/meminfo') as f:
+                for line in f:
+                    if 'MemAvailable' in line: mem_avail = int(line.split()[1]) * 1024
+        except: pass
+        load = ['0','0','0']
+        try:
+            with open('/proc/loadavg') as f:
+                load = f.read().split()[:3]
+        except: pass
+        net_rx = net_tx = 0
+        try:
+            with open('/proc/net/dev') as f:
+                for line in f:
+                    if 'eth0' in line or 'ens' in line or 'enp' in line:
+                        parts = line.split()
+                        net_rx += int(parts[1])
+                        net_tx += int(parts[9])
+        except: pass
+        status['system'] = {'disk_free': disk.free, 'mem_avail': mem_avail, 'load': [float(x) for x in load], 'net_rx': net_rx, 'net_tx': net_tx}
+        return jsonify(status)
+    except Exception as e:
+        return jsonify({'error': str(e)})
 
 @backup_bp.route('/dashboard')
 def dashboard():

@@ -2,7 +2,6 @@
 <html lang="ru">
 <head>
     <meta charset="utf-8">
-    <meta http-equiv="refresh" content="2">
     
     <title>Дашборд — Telegram Backup</title>
     <style>
@@ -54,7 +53,7 @@
         <h1><span class="status-dot {% if running %}running{% else %}stopped{% endif %}"></span>
             Telegram Backup
             
-            <span style="font-size:0.75em">🟢</span>
+            <span id="blinker" style="font-size:0.75em">🟢</span>
             {% if running and heartbeat_age > 0 %}<small style="font-size:20px;color:#8892b0">❤️ {{ "%.1f"|format(heartbeat_age) }}s</small>{% endif %}
         </h1>
         <div style="margin-bottom:10px">
@@ -72,24 +71,24 @@
     </div>
 
     <div class="cards">
-        <div class="card"><div class="label">📦 Всего</div><div class="num">{{ stats.total }}</div></div>
-        <div class="card"><div class="label">✅ Загружено</div><div class="num green">{{ stats.uploaded }}</div></div>
-        <div class="card"><div class="label">⏳ В очереди</div><div class="num blue">{{ stats.pending }}</div></div>
-        <div class="card"><div class="label">☑️ Выбрано</div><div class="num orange">{{ stats.selected }}</div></div>
-        <div class="card"><div class="label">🆕 Новых</div><div class="num purple">{{ stats.new_files }}</div></div>
-        <div class="card"><div class="label">❌ Ошибок</div><div class="num red">{{ stats.errors }}</div></div>
-        <div class="card"><div class="label">⏭️ Пропущено</div><div class="num">{{ stats.skipped }}</div></div>
-        <div class="card"><div class="label">⬜ Не скачано</div><div class="num">{{ stats.unloaded }}</div></div>
-        <div class="card"><div class="label">🗜️ Сжато</div><div class="num orange">{{ compressed_count }}</div></div>
-        <div class="card"><div class="label">💾 Экономия</div><div class="num green">{{ fmt_size(saved_bytes) }}</div></div>
+        <div class="card"><div class="label">📦 Всего</div><div class="num" id="stat-total">{{ stats.total }}</div></div>
+        <div class="card"><div class="label">✅ Загружено</div><div class="num green" id="stat-uploaded">{{ stats.uploaded }}</div></div>
+        <div class="card"><div class="label">⏳ В очереди</div><div class="num blue" id="stat-pending">{{ stats.pending }}</div></div>
+        <div class="card"><div class="label">☑️ Выбрано</div><div class="num orange" id="stat-selected">{{ stats.selected }}</div></div>
+        <div class="card"><div class="label">🆕 Новых</div><div class="num purple" id="stat-new">{{ stats.new_files }}</div></div>
+        <div class="card"><div class="label">❌ Ошибок</div><div class="num red" id="stat-errors">{{ stats.errors }}</div></div>
+        <div class="card"><div class="label">⏭️ Пропущено</div><div class="num" id="stat-skipped">{{ stats.skipped }}</div></div>
+        <div class="card"><div class="label">⬜ Не скачано</div><div class="num" id="stat-unloaded">{{ stats.unloaded }}</div></div>
+        <div class="card"><div class="label">🗜️ Сжато</div><div class="num orange" id="compressed-count">{{ compressed_count }}</div></div>
+        <div class="card"><div class="label">💾 Экономия</div><div class="num green" id="saved-bytes">{{ fmt_size(saved_bytes) }}</div></div>
     </div>
 
     <div class="cards">
-        <div class="card"><div class="label">📥 Скачано</div><div class="num green">{{ session.downloaded }}</div></div>
-        <div class="card"><div class="label">🗜️ Сжато</div><div class="num orange">{{ session.compressed }}</div></div>
-        <div class="card"><div class="label">📤 Загружено</div><div class="num blue">{{ session.uploaded }}</div></div>
-        <div class="card"><div class="label">🔍 Проверено</div><div class="num">{{ session.checked }}</div></div>
-        <div class="card"><div class="label">⏭️ Пропущено</div><div class="num">{{ session.skipped }}</div></div>
+        <div class="card"><div class="label">📥 Скачано</div><div class="num green" id="sess-downloaded">{{ session.downloaded }}</div></div>
+        <div class="card"><div class="label">🗜️ Сжато</div><div class="num orange" id="sess-compressed">{{ session.compressed }}</div></div>
+        <div class="card"><div class="label">📤 Загружено</div><div class="num blue" id="sess-uploaded">{{ session.uploaded }}</div></div>
+        <div class="card"><div class="label">🔍 Проверено</div><div class="num" id="sess-checked">{{ session.checked }}</div></div>
+        <div class="card"><div class="label">⏭️ Пропущено</div><div class="num" id="sess-skipped">{{ session.skipped }}</div></div>
     </div>
 
     {% if active %}
@@ -120,12 +119,12 @@
     </div>
     {% endif %}
 
-    <div class="cards">
-        <div class="card"><div class="label">💾 Свободно</div><div class="num green">—</div></div>
-        <div class="card"><div class="label">🧠 RAM</div><div class="num blue">—</div></div>
-        <div class="card"><div class="label">⚡ CPU %</div><div class="num">—</div></div>
-        <div class="card"><div class="label">📥 Сеть RX</div><div class="num green">—</div></div>
-        <div class="card"><div class="label">📤 Сеть TX</div><div class="num blue">—</div></div>
+    <div class="cards" id="sys-cards">
+        <div class="card"><div class="label">💾 Свободно</div><div class="num green" id="sys-disk">—</div></div>
+        <div class="card"><div class="label">🧠 RAM</div><div class="num blue" id="sys-ram">—</div></div>
+        <div class="card"><div class="label">⚡ Load</div><div class="num" id="sys-load">—</div></div>
+        <div class="card"><div class="label">📥 Сеть RX</div><div class="num green" id="sys-rx">—</div></div>
+        <div class="card"><div class="label">📤 Сеть TX</div><div class="num blue" id="sys-tx">—</div></div>
     </div>
     {% if chat_stats %}
     <div class="section">
@@ -140,6 +139,60 @@
     {% endif %}
 </div>
 
-
+<script>
+let controller = null;
+async function refresh() {
+    try {
+        // Отменяем предыдущий запрос если завис
+        if (controller) controller.abort();
+        controller = new AbortController();
+        let r = await fetch('/backup/api/status', {signal: controller.signal});
+        let d = await r.json();
+        
+        document.getElementById('stat-total').textContent = (d.summary ? d.summary.total_files : d.stats.total);
+        document.getElementById('stat-uploaded').textContent = (d.summary ? d.summary.total_uploaded : d.stats.uploaded);
+        document.getElementById('stat-pending').textContent = (d.summary ? d.summary.pending : d.stats.pending);
+        document.getElementById('stat-selected').textContent = (d.summary ? d.summary.selected_snapshot : d.stats.selected);
+        document.getElementById('stat-new').textContent = (d.summary ? d.summary.new_files : d.stats.new_files);
+        document.getElementById('stat-errors').textContent = (d.summary ? d.summary.error_files : d.stats.errors);
+        document.getElementById('stat-skipped').textContent = (d.summary ? d.summary.total_skipped : d.stats.skipped);
+        document.getElementById('stat-unloaded').textContent = (d.summary ? d.summary.unloaded_files : d.stats.unloaded);
+        document.getElementById('sess-downloaded').textContent = (d.summary ? (d.summary.downloaded || 0) : d.session.downloaded) || 0;
+        document.getElementById('sess-compressed').textContent = (d.summary ? (d.summary.compressed || 0) : d.session.compressed) || 0;
+        document.getElementById('sess-uploaded').textContent = (d.summary ? (d.summary.uploaded || 0) : d.session.uploaded) || 0;
+        document.getElementById('sess-checked').textContent = (d.summary ? (d.summary.checked || 0) : d.session.checked) || 0;
+        document.getElementById('sess-skipped').textContent = (d.summary ? (d.summary.skipped || 0) : d.session.skipped) || 0;
+        document.getElementById('compressed-count').textContent = (d.summary ? d.summary.total_compressed : d.compressed_count) || 0;
+        document.getElementById('saved-bytes').textContent = fmtSize((d.summary ? d.summary.saved_bytes : d.saved_bytes) || 0);
+        
+        if (d.system) {
+            document.getElementById('sys-disk').textContent = fmtSize(d.system.disk_free || 0);
+            document.getElementById('sys-ram').textContent = fmtSize(d.system.mem_avail || 0);
+            document.getElementById('sys-load').textContent = (d.system.load || [0,0,0]).map(function(x){return x.toFixed(1)}).join(' ');
+            document.getElementById('sys-rx').textContent = fmtSize(d.system.net_rx || 0);
+            document.getElementById('sys-tx').textContent = fmtSize(d.system.net_tx || 0);
+        }
+        
+        // Мигалка
+        let counter = parseInt(localStorage.getItem('blink') || '0');
+        localStorage.setItem('blink', counter + 1);
+        document.getElementById('blinker').textContent = counter % 2 === 0 ? '🟢' : '⚪';
+        
+        let dot = document.getElementById('status-dot');
+        dot.className = 'status-dot ' + (d.running ? 'running' : 'stopped');
+    } catch(e) {}
+}
+function fmtSize(b) {
+    if (!b) return '0B';
+    b = parseInt(b);
+    if (b < 1024) return b + 'B';
+    if (b < 1048576) return (b/1024).toFixed(1) + 'KB';
+    if (b < 1048576*1024) return (b/1048576).toFixed(1) + 'MB';
+    return (b/(1048576*1024)).toFixed(1) + 'GB';
+}
+setInterval(refresh, 1000);
+    setInterval(function(){ location.reload(); }, 4000);
+refresh();
+</script>
 </body>
 </html>
