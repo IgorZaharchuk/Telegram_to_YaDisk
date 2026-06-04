@@ -122,7 +122,7 @@
     <div class="cards" id="sys-cards">
         <div class="card"><div class="label">💾 Свободно</div><div class="num green" id="sys-disk">—</div></div>
         <div class="card"><div class="label">🧠 RAM</div><div class="num blue" id="sys-ram">—</div></div>
-        <div class="card"><div class="label">⚡ Load</div><div class="num" id="sys-load">—</div></div>
+        <div class="card"><div class="label">⚡ CPU %</div><div class="num" id="sys-load">—</div></div>
         <div class="card"><div class="label">📥 Сеть RX</div><div class="num green" id="sys-rx">—</div></div>
         <div class="card"><div class="label">📤 Сеть TX</div><div class="num blue" id="sys-tx">—</div></div>
     </div>
@@ -168,7 +168,7 @@ async function refresh() {
         if (d.system) {
             document.getElementById('sys-disk').textContent = fmtSize(d.system.disk_free || 0);
             document.getElementById('sys-ram').textContent = fmtSize(d.system.mem_avail || 0);
-            document.getElementById('sys-load').textContent = (d.system.load || [0,0,0]).map(function(x){return x.toFixed(1)}).join(' ');
+            document.getElementById('sys-load').textContent = ((d.system.load ? d.system.load[0] : 0) * 50).toFixed(0) + '%';
             document.getElementById('sys-rx').textContent = fmtSize(d.system.net_rx || 0);
             document.getElementById('sys-tx').textContent = fmtSize(d.system.net_tx || 0);
         }
@@ -190,8 +190,8 @@ function fmtSize(b) {
     if (b < 1048576*1024) return (b/1048576).toFixed(1) + 'MB';
     return (b/(1048576*1024)).toFixed(1) + 'GB';
 }
-setInterval(refresh, 1000);
-    setInterval(function(){ location.reload(); }, 4000);
+setInterval(refresh, 2000);
+    setInterval(function(){ location.reload(); }, 5000);
 refresh();
 </script>
 </body>
