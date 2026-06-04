@@ -1492,6 +1492,7 @@ class QueueSystem:
             if await self.db.is_photo(filename):
                 is_valid = await asyncio.to_thread(is_valid_image, compressed_path)
             elif await self.db.is_video(filename):
+                await asyncio.sleep(2)
                 is_valid = await is_valid_video(compressed_path)
             else:
                 is_valid = True
