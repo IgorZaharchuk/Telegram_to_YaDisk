@@ -159,15 +159,8 @@ def get_chat_ids_from_settings():
 
 # ==================== API для автообновления ====================
 
-_api_cache = {'data': None, 'time': 0}
-
 @backup_bp.route('/api/status')
 def api_status():
-    global _api_cache
-    now = time.time()
-    if _api_cache['data'] and now - _api_cache['time'] < 2:
-        return jsonify(_api_cache['data'])
-    
     import asyncio
     from database import get_db as get_async_db
     
@@ -180,7 +173,6 @@ def api_status():
         asyncio.set_event_loop(loop)
         status = loop.run_until_complete(get_status())
         loop.close()
-        _api_cache = {'data': status, 'time': time.time()}
         import shutil
         disk = shutil.disk_usage(PROJECT_DIR)
         mem_avail = 0
@@ -204,6 +196,30 @@ def api_status():
                         net_tx += int(parts[9])
         except: pass
         status['system'] = {'disk_free': disk.free, 'mem_avail': mem_avail, 'load': [float(x) for x in load], 'net_rx': net_rx, 'net_tx': net_tx}
+        if 'system' not in status:
+            import shutil
+            disk = shutil.disk_usage(PROJECT_DIR)
+            mem_avail = 0
+            try:
+                with open('/proc/meminfo') as f:
+                    for line in f:
+                        if 'MemAvailable' in line: mem_avail = int(line.split()[1]) * 1024
+            except: pass
+            load = [0.0, 0.0, 0.0]
+            try:
+                with open('/proc/loadavg') as f:
+                    load = [float(x) for x in f.read().split()[:3]]
+            except: pass
+            net_rx = net_tx = 0
+            try:
+                with open('/proc/net/dev') as f:
+                    for line in f:
+                        if 'eth0' in line or 'ens' in line or 'enp' in line:
+                            parts = line.split()
+                            net_rx += int(parts[1])
+                            net_tx += int(parts[9])
+            except: pass
+            status['system'] = {'disk_free': disk.free, 'mem_avail': mem_avail, 'load': load, 'net_rx': net_rx, 'net_tx': net_tx}
         return jsonify(status)
     except Exception as e:
         return jsonify({'error': str(e)})

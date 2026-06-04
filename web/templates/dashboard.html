@@ -165,10 +165,10 @@ async function refresh() {
         document.getElementById('compressed-count').textContent = (d.summary ? d.summary.total_compressed : d.compressed_count) || 0;
         document.getElementById('saved-bytes').textContent = fmtSize((d.summary ? d.summary.saved_bytes : d.saved_bytes) || 0);
         
-        if (d.system) {
+        if (d.system && d.system.disk_free) {
             document.getElementById('sys-disk').textContent = fmtSize(d.system.disk_free || 0);
             document.getElementById('sys-ram').textContent = fmtSize(d.system.mem_avail || 0);
-            document.getElementById('sys-load').textContent = (d.system.load || [0,0,0]).map(function(x){return x.toFixed(1)}).join(' ');
+            document.getElementById('sys-load').textContent = (d.system && d.system.load ? (d.system.load[0] * 50).toFixed(0) : '0') + '%';
             document.getElementById('sys-rx').textContent = fmtSize(d.system.net_rx || 0);
             document.getElementById('sys-tx').textContent = fmtSize(d.system.net_tx || 0);
         }
@@ -180,7 +180,9 @@ async function refresh() {
         
         let dot = document.getElementById('status-dot');
         dot.className = 'status-dot ' + (d.running ? 'running' : 'stopped');
-    } catch(e) {}
+    } catch(e) {
+        setTimeout(refresh, 1000);
+    }
 }
 function fmtSize(b) {
     if (!b) return '0B';
@@ -191,7 +193,7 @@ function fmtSize(b) {
     return (b/(1048576*1024)).toFixed(1) + 'GB';
 }
 setInterval(refresh, 1000);
-    setInterval(function(){ location.reload(); }, 4000);
+    setInterval(function(){ location.reload(); }, 3000);
 refresh();
 </script>
 </body>
