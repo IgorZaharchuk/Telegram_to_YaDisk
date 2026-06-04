@@ -978,6 +978,24 @@ def yadisk_links():
     
     return jsonify(result)
 
+@backup_bp.route('/dashboard/controls')
+def dashboard_controls():
+    conn = get_db()
+    c = conn.cursor()
+    running = is_running()
+    age = get_heartbeat_age() if running else 0
+    
+    active = []
+    for row in c.execute("SELECT qi.filename, qi.file_size, qp.worker_type, ap.progress, ap.speed, ap.eta FROM queue_items qi JOIN queue_processing qp ON qi.key = qp.key LEFT JOIN active_progress ap ON qi.key = ap.key"):
+        active.append(dict(row))
+    
+    scan_progress = {}
+    for row in c.execute("SELECT * FROM scan_progress WHERE completed=0"):
+        scan_progress[str(row['chat_id'])] = dict(row)
+    
+    conn.close()
+    return render_template('controls.html', running=running, heartbeat_age=age, active=active, scan_progress=scan_progress, fmt_size=fmt_size)
+
 app.register_blueprint(backup_bp)
 
 if __name__ == '__main__':

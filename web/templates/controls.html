@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta http-equiv="refresh" content="2">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#1a1a2e;color:#eee;font-size:18px;font-weight:600;padding:10px}
+.btn{display:inline-block;padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-size:18px;font-weight:600;text-decoration:none;margin:2px}
+.btn-green{background:#00b894;color:#fff}.btn-red{background:#e17055;color:#fff}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.active-item{background:#1a2744;padding:6px 10px;border-radius:6px;border-left:3px solid #e94560;margin:4px 0}
+.active-item.download{border-left-color:#00b894}.active-item.compress{border-left-color:#fdcb6e}.active-item.upload{border-left-color:#74b9ff}
+.progress-bar{height:6px;background:#0f3460;border-radius:3px;margin:3px 0}
+.progress-fill{height:100%;border-radius:3px}
+.progress-fill.download{background:#00b894}.progress-fill.compress{background:#fdcb6e}.progress-fill.upload{background:#74b9ff}
+.status-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:3px}
+.status-dot.running{background:#00ff88;box-shadow:0 0 6px #00ff88}
+.status-dot.stopped{background:#ff4444}
+</style></head>
+<body>
+<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+    <span class="status-dot {% if running %}running{% else %}stopped{% endif %}"></span>
+    <form method="POST" action="{{ url_for('backup.start_backup') }}" style="display:inline"><button class="btn btn-green" {% if running %}disabled{% endif %}>{% if running %}✅ Запущен{% else %}▶️ Запустить{% endif %}</button></form>
+    <form method="POST" action="{{ url_for('backup.stop_backup') }}" style="display:inline"><button class="btn btn-red" {% if not running %}disabled{% endif %}>⏹️ Остановить</button></form>
+    {% if running and heartbeat_age > 0 %}<span style="font-size:16px;color:#8892b0">❤️ {{ "%.1f"|format(heartbeat_age) }}s</span>{% endif %}
+</div>
+{% for a in active %}
+<div class="active-item {% if a.worker_type=='download' %}download{% elif a.worker_type in ('compress_photo','compress_video') %}compress{% else %}upload{% endif %}">
+    <div style="font-size:16px;font-weight:bold">{{ a.filename[:40] }}</div>
+    {% if a.progress %}<div class="progress-bar"><div class="progress-fill {% if a.worker_type=='download' %}download{% elif a.worker_type in ('compress_photo','compress_video') %}compress{% else %}upload{% endif %}" style="width:{{ a.progress }}%"></div></div>{% endif %}
+    <div style="font-size:14px;color:#8892b0">{{ "%.0f"|format(a.progress or 0) }}% | {{ fmt_size(a.file_size or 0) }}</div>
+</div>
+{% endfor %}
+{% if scan_progress %}
+{% for cid, s in scan_progress.items() %}
+<div style="font-size:11px;margin:4px 0">{{ s.chat_name or cid }} {{ "%.0f"|format(s.percent) }}%<div class="progress-bar"><div class="progress-fill download" style="width:{{ s.percent }}%"></div></div></div>
+{% endfor %}
+{% endif %}
+</body>
+</html>

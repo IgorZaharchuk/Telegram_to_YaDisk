@@ -52,16 +52,21 @@
     <div class="header">
         <h1><span class="status-dot {% if running %}running{% else %}stopped{% endif %}"></span>
             Telegram Backup
+            
             <span id="blinker" style="font-size:0.75em">🟢</span>
             {% if running and heartbeat_age > 0 %}<small style="font-size:20px;color:#8892b0">❤️ {{ "%.1f"|format(heartbeat_age) }}s</small>{% endif %}
         </h1>
-        <div class="flex">
+        <div style="margin-bottom:10px">
             <form method="POST" action="{{ url_for('backup.start_backup') }}" style="display:inline">
                 <button class="btn btn-green" {% if running %}disabled{% endif %}>{% if running %}✅ Запущен{% else %}▶️ Запустить{% endif %}</button>
             </form>
             <form method="POST" action="{{ url_for('backup.stop_backup') }}" style="display:inline">
                 <button class="btn btn-red" {% if not running %}disabled{% endif %}>⏹️ Остановить</button>
             </form>
+        </div>
+        
+        <div class="flex">
+            
         </div>
     </div>
 
@@ -170,7 +175,8 @@ function fmtSize(b) {
     if (b < 1048576*1024) return (b/1048576).toFixed(1) + 'MB';
     return (b/(1048576*1024)).toFixed(1) + 'GB';
 }
-setInterval(refresh, 2000);
+setInterval(refresh, 1000);
+    setInterval(function(){ location.reload(); }, 4000);
 refresh();
 </script>
 </body>

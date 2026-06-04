@@ -751,7 +751,9 @@ class FileProcessor:
                 if 0 < file_size < (item.file_size or 0):
                     await asyncio.sleep(3)
                 if not await is_valid_video(path):
-                    logger.warning(f"⚠️ {item.filename} не прошёл ffprobe, загружаем оригинал без сжатия")
+                    await asyncio.sleep(5)
+                    if not await is_valid_video(path):
+                        logger.warning(f"⚠️ {item.filename} не прошёл ffprobe, загружаем оригинал без сжатия")
 
             last_update = [0.0]  # mutable для замыкания
             
@@ -1320,14 +1322,14 @@ class QueueSystem:
         except asyncio.TimeoutError:
             logger.warning("⚠️ Не все воркеры остановились за 15 секунд")
 
-        await asyncio.sleep(2)
+        await asyncio.sleep(5)
 
         # Останавливаем ffmpeg
         if self.comp:
             if hasattr(self.comp, 'request_shutdown'):
                 self.comp.request_shutdown()
             await self.comp.stop_all_ffmpeg()
-            await asyncio.sleep(2)
+            await asyncio.sleep(5)
 
         try:
             await self.db.checkpoint()
@@ -1354,7 +1356,7 @@ class QueueSystem:
 
         while self.running:
             try:
-                await asyncio.sleep(2)
+                await asyncio.sleep(5)
                 cpu = psutil.cpu_percent(interval=None)
                 
                 now = time.time()
