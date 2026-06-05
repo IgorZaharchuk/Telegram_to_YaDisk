@@ -29,12 +29,13 @@ h2{font-size:33px;;color:#ccd6f6;margin:0 0 8px}
 @media(min-width:2560px){
     body{zoom:0.85}
 }
+.btn{display:inline-block;padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:600;text-decoration:none;margin:2px}.btn-blue{background:#0984e3;color:#fff}
 </style>
 </head>
 <body>
 {% include "_nav.html" %}
 <div class="container">
-    <h2>📁 {{ chat_name }} / 📂 {{ topic.topic_name }}</h2>
+    <h2>📁 {{ chat_name }} / 📂 {{ topic.topic_name }} <a href="{{ url_for('backup.chat_detail', chat_id=chat_id) }}" class="btn btn-blue" style="font-size:18px;padding:12px 28px;margin-left:10px">◀ Назад</a></h2>
     <p>
         <span class="tag tag-green">Всего: {{ stats.total }}</span>
         <span class="tag tag-green">Загружено: {{ stats.uploaded }}</span>

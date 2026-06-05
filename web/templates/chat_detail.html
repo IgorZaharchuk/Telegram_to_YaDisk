@@ -16,7 +16,7 @@ nav{background:#16213e;padding:0 8px;display:flex;gap:2px;flex-wrap:wrap}nav a{c
 <body>
 {% include "_nav.html" %}
 <div class="container">
-<h1>📁 {{ name }} <small style="color:#636e72">(ID: {{ chat_id }})</small></h1>
+<h1>📁 {{ name }} <small style="color:#636e72">(ID: {{ chat_id }})</small> <a href="{{ url_for('backup.chats') }}" class="btn btn-blue" style="font-size:20px;margin-left:10px">◀ Назад</a></h1>
 <p style="display:flex;gap:6px;flex-wrap:wrap">
     <span class="tag tag-green">Всего: {{ stats.total or 0 }}</span>
     <span class="tag tag-green">Загружено: {{ stats.uploaded or 0 }}</span>
