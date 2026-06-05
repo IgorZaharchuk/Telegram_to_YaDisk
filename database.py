@@ -171,7 +171,7 @@ class DatabaseManager:
     DEFAULT_PATHS: Dict[str, str] = {'download_dir': 'downloads', 'logs_dir': 'logs', 'sessions_dir': 'sessions'}
     DEFAULT_DOWNLOAD: Dict[str, int] = {'max_concurrent': 3, 'min_concurrent': 1, 'max_concurrent_max': 5, 'rate_limit_calls': 30, 'rate_limit_period': 60}
     DEFAULT_UPLOAD: Dict[str, Any] = {'base_path': '/tg_backup', 'min_free_space_mb': 100, 'rate_limit_calls': 100, 'rate_limit_period': 60, 'max_concurrent_uploads': 3, 'upload_timeout': 60}
-    DEFAULT_COMPRESSION: Dict[str, Any] = {'min_photo_size_kb': 500, 'image_quality': 92, 'convert_heic': True, 'min_video_size_mb': 15, 'min_video_duration': 10, 'video_crf': 23, 'video_preset': 'veryfast', 'video_threads': 2, 'photo_processes': 4, 'skip_efficient_codecs': True, 'use_cpulimit': True, 'video_cpu_limit': 70, 'low_priority': True}
+    DEFAULT_COMPRESSION: Dict[str, Any] = {'min_photo_size_kb': 500, 'image_quality': 92, 'convert_heic': True, 'min_video_size_mb': 15, 'min_video_duration': 10, 'video_crf': 23, 'video_preset': 'veryfast', 'video_threads': 2, 'photo_processes': 4, 'skip_efficient_codecs': True, 'use_cpulimit': True, 'video_cpu_limit': 50, 'low_priority': True}
     DEFAULT_QUEUE: Dict[str, int] = {'check_workers': 10, 'download_workers': 6, 'photo_workers': 2, 'video_workers': 1, 'upload_workers': 5}
     DEFAULT_TELEGRAM_CLIENT: Dict[str, Any] = {'topics_cache_ttl': 86400, 'dialogs_cache_ttl': 300, 'rate_limit_calls': 30, 'rate_limit_period': 60, 'max_concurrent_downloads': 3, 'min_concurrent_downloads': 1, 'max_concurrent_downloads_max': 8}
     DEFAULT_FILE_TYPES: Dict[str, List[str]] = {
