@@ -176,6 +176,7 @@ async function refresh() {
         controller = new AbortController();
         let r = await fetch('/backup/api/status', {signal: controller.signal});
         let d = await r.json();
+        lastUpdate = Date.now();
         
         document.getElementById('stat-total').textContent = (d.summary ? d.summary.total_files : d.stats.total);
         document.getElementById('stat-uploaded').textContent = (d.summary ? d.summary.total_uploaded : d.stats.uploaded);

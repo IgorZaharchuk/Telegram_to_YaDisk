@@ -268,7 +268,7 @@ async def _connect_services(tg: TelegramDownloader, ya: YandexUploader) -> bool:
 async def main_async(scan_only: bool = False, full_scan: bool = False,
                      incremental: bool = False, chat_id: Optional[int] = None) -> int:
     """Главная асинхронная функция."""
-    signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+    #signal.signal(signal.SIGCHLD, signal.SIG_IGN)  # ломает ffprobe
     logger.info(f"🚀 Запуск оркестратора v{__version__}")
     write_pid()
 
