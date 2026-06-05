@@ -1,7 +1,28 @@
-/* На Full HD и шире — уменьшаем всю страницу */
-@media(min-width:1400px){
-    body{zoom:0.7}
+/* Десктоп Full HD и шире — уменьшаем */
+@media(min-width:1024px){
+    body{font-size:14px!important}
+    nav a{font-size:16px!important;padding:8px 6px!important}
+    h1{font-size:24px!important}
+    h2{font-size:20px!important}
+    .btn{font-size:16px!important;padding:8px 16px!important}
+    .card .num{font-size:24px!important}
+    .card .label{font-size:11px!important}
+    table{font-size:14px!important}
+    th,td{font-size:12px!important;padding:6px 8px!important}
+    .tag{font-size:12px!important}
+    .filters a{font-size:16px!important}
+    .event-file{font-size:18px!important}
+    .event-meta{font-size:14px!important}
+    .event-date{font-size:14px!important}
+    .file-name{font-size:16px!important}
+    .file-meta{font-size:13px!important}
 }
+
+/* 4K — чуть крупнее */
 @media(min-width:2560px){
-    body{zoom:0.85}
+    body{font-size:16px!important}
+    h1{font-size:28px!important}
+    h2{font-size:24px!important}
+    .btn{font-size:18px!important}
+    .card .num{font-size:28px!important}
 }
