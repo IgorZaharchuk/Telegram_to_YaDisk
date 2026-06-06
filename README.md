@@ -249,6 +249,8 @@ Telegram_to_YaDisk/
 ### Установка
 
 ```bash
+# Автоматически: chmod +x util/setup_web.sh && ./util/setup_web.sh
+# Или вручную:
 pip install flask gunicorn python-dotenv requests
 gunicorn -w 2 -b 127.0.0.1:5000 web.server:app --timeout 10
 ```
