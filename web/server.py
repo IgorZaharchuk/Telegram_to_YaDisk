@@ -625,12 +625,14 @@ def settings():
 @backup_bp.route('/start', methods=['POST'])
 def start_backup():
     if not is_running():
+        time.sleep(60)
         subprocess.Popen([PYTHON, MAIN_PY], cwd=PROJECT_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     return redirect(url_for('backup.dashboard'))
 
 @backup_bp.route('/stop', methods=['POST'])
 def stop_backup():
     if os.path.exists(PID_FILE):
+        time.sleep(60)
         with open(PID_FILE) as f:
             try: os.kill(int(f.read().strip()), signal.SIGTERM)
             except: pass
