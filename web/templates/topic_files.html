@@ -1,75 +1,19 @@
 <!DOCTYPE html>
 <html lang="ru">
-<head><meta charset="utf-8"><title>{{ topic.topic_name }} — {{ chat_name }}</title>
-<style>
-*{box-sizing:border-box}body{font-size:27px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;background:#1a1a2e;color:#eee;;font-weight:600}
+<head><meta charset="utf-8">
 
-.container{max-width:100%;margin:15px auto;padding:0 10px}
-h2{font-size:33px;;color:#ccd6f6;margin:0 0 8px}
-.tag{display:inline-block;padding:4px 10px;border-radius:4px;;margin:2px;font-weight:600}
-.tag-green{background:rgba(0,184,148,.2);color:#00b894}
-.tag-red{background:rgba(225,112,85,.2);color:#e17055}
-.tag-blue{background:rgba(116,185,255,.2);color:#74b9ff}
-.filters{background:#16213e;padding:8px 10px;border-radius:8px;margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap;align-items:center;border:1px solid #0f3460}
-.filters strong{font-size:25px;color:#8892b0;}
-.filters a{padding:4px 8px;border-radius:4px;font-size:25px;text-decoration:none;background:#1a2744;color:#a8b2d1;font-weight:600}
-.filters a.active{background:#0984e3;color:#fff}
-.file-card{background:#16213e;padding:10px 14px;border-radius:8px;margin-bottom:4px;border:1px solid #0f3460;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
-.file-card:hover{background:#1a2744}
-.file-info{flex:1;min-width:180px}
-.file-name{font-size:25px;;font-weight:700;color:#ccd6f6;word-break:break-all;margin-bottom:2px}
-.file-meta{font-size:19px;;color:#8892b0}
-.file-actions{display:flex;gap:40px;align-items:center}
-.btn-sm{display:inline-block;padding:2px 4px;border:none;background:none;cursor:pointer;font-size:28px;font-weight:700;text-decoration:none;margin:1px}
-.btn-green{background:#00b894;color:#fff}.btn-gray{background:#636e72;color:#fff}.btn-purple{background:#6c5ce7;color:#fff}
-.file-meta .tag{font-size:inherit}.file-meta span{font-size:inherit}.act-btn{padding:4px 8px;border-radius:4px;background:#1a2744;color:#a8b2d1;font-weight:600;border:1px solid #0f3460;cursor:pointer;font-family:inherit;font-size:inherit}.act-btn:hover{background:#0f3460}nav{background:#16213e;padding:0 8px;display:flex;gap:2px;flex-wrap:wrap}nav a{color:#a8b2d1;text-decoration:none;padding:10px 8px;font-size:23px;font-weight:700;white-space:nowrap}nav a:hover,nav a.active{background:#0f3460;color:#e94560}/* На Full HD и шире — уменьшаем всю страницу */
-@media(min-width:1400px){
-    body{zoom:0.7}
-}
-@media(min-width:2560px){
-    body{zoom:0.85}
-}
-.btn{display:inline-block;padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:600;text-decoration:none;margin:2px}.btn-blue{background:#0984e3;color:#fff}
-/* Десктоп Full HD и шире — уменьшаем */
-@media(min-width:1024px){
-    body{font-size:14px!important}
-    nav a{font-size:16px!important;padding:8px 6px!important}
-    h1{font-size:28px!important}
-    h2{font-size:20px!important}
-    .btn{font-size:16px!important;padding:8px 16px!important}
-    .card .num{font-size:28px!important}
-    .card .label{font-size:11px!important}
-    table{font-size:14px!important}
-    th,td{font-size:12px!important;padding:6px 8px!important}
-    .tag{font-size:12px!important}
-    .filters a{font-size:16px!important}
-    .event-file{font-size:18px!important}
-    .event-meta{font-size:14px!important}
-    .event-date{font-size:14px!important}
-    .file-name{font-size:16px!important}
-    .file-meta{font-size:13px!important}
-}
-
-/* 4K — чуть крупнее */
-@media(min-width:2560px){
-    body{font-size:16px!important}
-    h1{font-size:28px!important}
-    h2{font-size:28px!important}
-    .btn{font-size:18px!important}
-    .card .num{font-size:28px!important}
-}
-</style>
+<link rel="stylesheet" href="/backup/static/main.css">
 </head>
 <body>
 {% include "_nav.html" %}
 <div class="container">
     <h2>📁 {{ chat_name }} / 📂 {{ topic.topic_name }} <a href="{{ url_for('backup.chat_detail', chat_id=chat_id) }}" class="btn btn-blue" style="font-size:18px;padding:12px 28px;margin-left:10px">◀ Назад</a></h2>
     <p>
-        <span class="tag tag-green">Всего: {{ stats.total }}</span>
-        <span class="tag tag-green">Загружено: {{ stats.uploaded }}</span>
-        <span class="tag tag-blue">Выбрано: {{ stats.selected }}</span>
+        <span class="tag tag-green counter-tag">Всего: {{ stats.total }}</span>
+        <span class="tag tag-green counter-tag">Загружено: {{ stats.uploaded }}</span>
+        <span class="tag tag-blue counter-tag">Выбрано: {{ stats.selected }}</span>
         <span class="tag">Новых: {{ stats.new }}</span>
-        <span class="tag tag-red">Ошибок: {{ stats.error }}</span>
+        <span class="tag tag-red counter-tag">Ошибок: {{ stats.error }}</span>
     </p>
 
     <div class="filters">

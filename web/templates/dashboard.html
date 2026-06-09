@@ -4,75 +4,8 @@
     <meta charset="utf-8">
     
     <title>Дашборд — Telegram Backup</title>
-    <style>
-        *{box-sizing:border-box}
-        body{font-size:27px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;background:#1a1a2e;color:#eee;;font-weight:600}
-        .container{max-width:100%;margin:15px auto;padding:0 10px}
-        .header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px}
-        .header h1{margin:0;font-size:32px}
-        .status-dot{display:inline-block;width:14px;height:14px;border-radius:50%;margin-right:5px}
-        .status-dot.running{background:#00ff88;box-shadow:0 0 10px #00ff88}
-        .status-dot.stopped{background:#ff4444}
-        .btn{display:inline-block;padding:12px 28px;border:none;border-radius:8px;cursor:pointer;font-size:22px;font-weight:700;text-decoration:none;margin:3px}
-        .btn-green{background:#00b894;color:#fff}.btn-red{background:#e17055;color:#fff}
-        .btn:disabled{opacity:.4;cursor:not-allowed}
-        .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:15px}
-        .card{background:#16213e;padding:14px 20px;border-radius:10px;text-align:center;border:1px solid #0f3460}
-        .card .label{font-size:20px;color:#8892b0;margin-bottom:6px}
-        .card .num{font-size:32px;font-weight:bold}
-        .card .num.green{color:#00b894}.card .num.red{color:#e17055}.card .num.blue{color:#74b9ff}.card .num.orange{color:#fdcb6e}.card .num.purple{color:#a29bfe}
-        .section{background:#16213e;padding:16px;border-radius:10px;margin-bottom:15px;border:1px solid #0f3460}
-        .section h2{font-size:33px;;color:#ccd6f6;margin:0 0 8px}
-        .active-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:10px}
-        .active-item{background:#1a2744;padding:12px;border-radius:8px;border-left:4px solid #e94560}
-        .active-item.download{border-left-color:#00b894}.active-item.compress{border-left-color:#fdcb6e}.active-item.upload{border-left-color:#74b9ff}
-        .active-item .file{font-size:25px;font-weight:bold;margin-bottom:6px}
-        .active-item .info{font-size:22px;color:#8892b0}
-        .progress-bar{height:10px;background:#0f3460;border-radius:5px;overflow:hidden;margin:6px 0}
-        .progress-fill{height:100%;border-radius:5px}
-        .progress-fill.download{background:#00b894}.progress-fill.compress{background:#fdcb6e}.progress-fill.upload{background:#74b9ff}
-        table{width:100%;border-collapse:collapse;font-size:20px}
-        th,td{padding:8px 10px;border-bottom:1px solid #0f3460;text-align:left}
-        th{color:#8892b0;font-size:20px;font-weight:700}
-        .tag{display:inline-block;padding:4px 10px;border-radius:4px;;margin:2px;font-weight:600}
-        .tag-green{background:rgba(0,184,148,.2);color:#00b894}.tag-red{background:rgba(225,112,85,.2);color:#e17055}.tag-blue{background:rgba(116,185,255,.2);color:#74b9ff}
-        .flex{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-    nav{background:#16213e;padding:0 8px;display:flex;gap:2px;flex-wrap:wrap}nav a{color:#a8b2d1;text-decoration:none;padding:10px 8px;font-size:23px;font-weight:700;white-space:nowrap}nav a:hover,nav a.active{background:#0f3460;color:#e94560}/* На Full HD и шире — уменьшаем всю страницу */
-@media(min-width:1400px){
-    body{font-size:27px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;background:#1a1a2e;color:#eee;;font-weight:600}
-}
-@media(min-width:2560px){
-    body{font-size:27px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:0;background:#1a1a2e;color:#eee;;font-weight:600}
-}
-/* Десктоп Full HD и шире — уменьшаем */
-@media(min-width:1024px){
-    body{font-size:14px!important}
-    nav a{font-size:16px!important;padding:8px 6px!important}
-    h1{font-size:24px!important}
-    h2{font-size:20px!important}
-    .btn{font-size:16px!important;padding:8px 16px!important}
-    .card .num{font-size:24px!important}
-    .card .label{font-size:11px!important}
-    table{font-size:14px!important}
-    th,td{font-size:12px!important;padding:6px 8px!important}
-    .tag{font-size:12px!important}
-    .filters a{font-size:16px!important}
-    .event-file{font-size:18px!important}
-    .event-meta{font-size:14px!important}
-    .event-date{font-size:14px!important}
-    .file-name{font-size:16px!important}
-    .file-meta{font-size:13px!important}
-}
-
-/* 4K — чуть крупнее */
-@media(min-width:2560px){
-    body{font-size:16px!important}
-    h1{font-size:28px!important}
-    h2{font-size:24px!important}
-    .btn{font-size:18px!important}
-    .card .num{font-size:28px!important}
-}
-</style>
+    
+<link rel="stylesheet" href="/backup/static/main.css">
 </head>
 <body>
 {% include "_nav.html" %}
@@ -203,9 +136,10 @@ async function refresh() {
         }
         
         // Мигалка
-        let counter = parseInt(localStorage.getItem('blink') || '0');
-        localStorage.setItem('blink', counter + 1);
-        document.getElementById('blinker').textContent = counter % 2 === 0 ? '🟢' : '⚪';
+        
+        
+        let blinker = document.getElementById('blinker');
+        if (blinker) { blinker.textContent = (Math.floor(Date.now() / 4000) % 2 === 0) ? '🟢' : '⚪'; }
         
         let dot = document.getElementById('status-dot');
         dot.className = 'status-dot ' + (d.running ? 'running' : 'stopped');

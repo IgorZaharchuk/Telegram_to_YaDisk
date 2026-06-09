@@ -12,7 +12,7 @@ from pathlib import Path
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, Blueprint, jsonify
 
-app = Flask(__name__, static_folder='templates/static', static_url_path='/backup/static')
+app = Flask(__name__, static_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates/static'), static_url_path='/backup/static')
 backup_bp = Blueprint('backup', __name__, url_prefix='/backup')
 
 # Константы

@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <title>Настройки — Telegram Backup</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='settings.css') }}">
-<link rel="stylesheet" href="/backup/static/settings.css">
+<link rel="stylesheet" href="/backup/static/main.css">
 </head>
 <body>
 {% include "_nav.html" %}
@@ -12,12 +12,19 @@
     <h1>⚙️ Настройки</h1>
 
     <div class="section">
-        <h3>🕐 Окна работы</h3>
-        <form method="POST" action="{{ url_for('backup.add_window') }}" class="form-row">
-            <input type="text" name="start" placeholder="Начало (9:00)">
-            <input type="text" name="end" placeholder="Конец (18:00)">
-            <button class="btn btn-green">➕ Добавить окно</button>
-        </form>
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+            <div style="display:flex;align-items:center;margin-bottom:5px;width:100%">
+                <h3 style="margin:0;flex:1">🕐 Окна работы</h3>
+                <form method="POST" action="{{ url_for('backup.add_window') }}">
+                    <button class="btn btn-green">➕ Добавить окно</button>
+                </form>
+            </div>
+            <form method="POST" action="{{ url_for('backup.add_window') }}" class="form-row">
+                <input type="text" name="start" placeholder="Начало (9:00)">
+                <input type="text" name="end" placeholder="Конец (18:00)">
+                <button class="btn btn-green" style="display:none"></button>
+            </form>
+        </div>
         {% if windows %}
         <table>
             <tr><th>#</th><th>Начало</th><th>Конец</th><th></th></tr>
