@@ -10,11 +10,11 @@
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
     <h1 style="margin:0">📜 История операций</h1>
     {% if total_pages > 1 %}
-    <div class="pag" style="margin:0">
-    {% if page > 1 %}<a href="?page={{ page-1 }}">◀ Новее</a>{% endif %}
-    <span>{{ page }}/{{ total_pages }}</span>
-    {% if page < total_pages %}<a href="?page={{ page+1 }}">Старее ▶</a>{% endif %}
-    </div>
+    <span style="display:inline-flex;align-items:center;background:#0984e3;border-radius:6px;overflow:hidden">
+    {% if page > 1 %}<a href="?page={{ page-1 }}" style="font-size:34px;color:#fff;font-weight:900;text-decoration:none;background:#0984e3;padding:4px 12px;border-right:2px solid rgba(255,255,255,.5)">◀</a>{% endif %}
+    <span style="color:#fff;font-size:22px;padding:4px 12px;border-left:1px solid rgba(255,255,255,.3);border-right:1px solid rgba(255,255,255,.3)">{{ page }}/{{ total_pages }}</span>
+    {% if page < total_pages %}<a href="?page={{ page+1 }}" style="font-size:34px;color:#fff;font-weight:900;text-decoration:none;background:#0984e3;padding:4px 12px;border-left:2px solid rgba(255,255,255,.5)">▶</a>{% endif %}
+    </span>
     {% endif %}
 </div>
     
