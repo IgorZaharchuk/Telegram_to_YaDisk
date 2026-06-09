@@ -7,7 +7,10 @@
 <body>
 {% include "_nav.html" %}
 <div class="container">
-<h1>📁 {{ name }} <small style="color:#636e72">(ID: {{ chat_id }})</small> <a href="{{ url_for('backup.chats') }}" class="btn btn-blue" style="font-size:20px;margin-left:10px">◀ Назад</a></h1>
+<div style="display:flex;align-items:center;margin-bottom:10px">
+    <h1 style="margin:0;flex:1">📁 {{ name }} <small style="color:#636e72">(ID: {{ chat_id }})</small></h1>
+    <a href="{{ url_for('backup.chats') }}" class="btn btn-blue" style="font-size:24px">◀ Назад</a>
+</div>
 <p style="display:flex;gap:6px;flex-wrap:wrap">
     <span class="tag tag-green">Всего: {{ stats.total or 0 }}</span>
     <span class="tag tag-green">Загружено: {{ stats.uploaded or 0 }}</span>
