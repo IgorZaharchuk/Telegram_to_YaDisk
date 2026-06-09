@@ -41,7 +41,7 @@ h3{font-size:30px;color:#ccd6f6;font-weight:800}
 .table-wrap{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:26px}
 th,td{padding:6px 8px;border-bottom:1px solid #0f3460;text-align:left}
-th{color:#a8b2d1;font-size:17px;font-weight:700;letter-spacing:0;padding:6px 8px}
+th{color:#a8b2d1;font-size:18px;font-weight:700;letter-spacing:0;padding:6px 8px}
 
 /* === СЕКЦИИ === */
 .section{background:#16213e;padding:20px;border-radius:12px;margin-bottom:16px;border:1px solid #0f3460}
@@ -73,7 +73,7 @@ th{color:#a8b2d1;font-size:17px;font-weight:700;letter-spacing:0;padding:6px 8px
 .active-item.compress{border-left-color:#fdcb6e}
 .active-item.upload{border-left-color:#74b9ff}
 .active-item .file{font-size:21px;font-weight:bold;margin-bottom:4px}
-.active-item .info{font-size:19px;color:#a8b2d1}
+.active-item .info{font-size:18px;color:#a8b2d1}
 
 /* === ФИЛЬТРЫ === */
 .filters a{padding:4px 8px;border-radius:4px;font-size:26px;text-decoration:none;background:#1a2744;color:#a8b2d1;font-weight:600}
@@ -140,7 +140,7 @@ small{color:#636e72}
     .btn{font-size:26px;padding:10px 20px}
     .btn-lg{font-size:28px}
     
-    table{font-size:24px}th{color:#a8b2d1;font-size:17px;font-weight:700;letter-spacing:0;padding:6px 8px}
+    table{font-size:24px}th{color:#a8b2d1;font-size:18px;font-weight:700;letter-spacing:0;padding:6px 8px}
     .card .num{font-size:33px;font-weight:bold}
     .event-file{font-size:28px}
     .event-meta{font-size:21px}
@@ -159,11 +159,11 @@ small{color:#636e72}
     .btn{font-size:24px;padding:8px 18px}
     .btn-lg{font-size:26px}
     
-    table{font-size:19px}
+    table{font-size:18px}
     .event-file{font-size:26px}
     .event-meta{font-size:24px}
     
-    input,select{font-size:19px}
+    input,select{font-size:18px}
     p{font-size:24px}
 }
 
