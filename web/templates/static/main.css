@@ -28,7 +28,7 @@ h3{font-size:30px;color:#ccd6f6;font-weight:800}
 .btn-lg{padding:14px 28px;font-size:30px}
 
 /* === ТЕГИ === */
-.tag{display:inline-block;padding:4px 10px;border-radius:4px;font-size:16px;margin:2px;font-weight:600;white-space:nowrap;background:#1a2744}
+.tag{display:inline-block;padding:4px 10px;border-radius:4px;font-size:20px!important;margin:2px;font-weight:600;white-space:nowrap;background:#1a2744!important}
 .tag-green{background:rgba(0,184,148,.3);color:#00ffaa;font-weight:700;font-size:20px!important}
 .tag-blue{background:rgba(116,185,255,.3);color:#88ccff;font-weight:700;font-size:20px!important}
 .tag-red{background:rgba(225,112,85,.3);color:#ff8877;font-weight:700;font-size:20px!important}
@@ -40,8 +40,8 @@ h3{font-size:30px;color:#ccd6f6;font-weight:800}
 /* === ТАБЛИЦЫ === */
 .table-wrap{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:26px}
-th,td{padding:10px;border-bottom:1px solid #0f3460;text-align:left}
-th{color:#a8b2d1;font-size:24px;font-weight:700;letter-spacing:1px}
+th,td{padding:6px 8px;border-bottom:1px solid #0f3460;text-align:left}
+th{color:#a8b2d1;font-size:17px;font-weight:700;letter-spacing:0;padding:6px 8px}
 
 /* === СЕКЦИИ === */
 .section{background:#16213e;padding:20px;border-radius:12px;margin-bottom:16px;border:1px solid #0f3460}
@@ -140,7 +140,7 @@ small{color:#636e72}
     .btn{font-size:26px;padding:10px 20px}
     .btn-lg{font-size:28px}
     
-    table{font-size:24px}th{font-size:19px}
+    table{font-size:24px}th{color:#a8b2d1;font-size:17px;font-weight:700;letter-spacing:0;padding:6px 8px}
     .card .num{font-size:33px;font-weight:bold}
     .event-file{font-size:28px}
     .event-meta{font-size:21px}
