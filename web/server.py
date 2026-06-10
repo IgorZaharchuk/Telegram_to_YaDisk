@@ -948,6 +948,14 @@ def yadisk_file():
         file_r = requests.get(download_url, stream=True, timeout=120)
         filename = path.split('/')[-1]
         content_type = file_r.headers.get('Content-Type', 'application/octet-stream')
+        # Определяем MIME по расширению если Яндекс не дал правильный
+        import mimetypes
+        ext = os.path.splitext(filename)[1].lower()
+        mime_map = {'.jpg':'image/jpeg','.jpeg':'image/jpeg','.png':'image/png','.gif':'image/gif','.webp':'image/webp',
+                    '.mp4':'video/mp4','.avi':'video/x-msvideo','.mkv':'video/x-matroska','.mov':'video/quicktime',
+                    '.mp3':'audio/mpeg','.pdf':'application/pdf'}
+        if ext in mime_map:
+            content_type = mime_map[ext]
         content_length = file_r.headers.get('Content-Length', '')
         
         headers_out = {'Content-Disposition': f'inline; filename="{filename}"'}
