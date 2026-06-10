@@ -9,17 +9,11 @@
 {% include "_nav.html" %}
 <div class="container">
     <div>
-        <h1>📋 Очередь ({{ total }})</h1>
-        {% if total_pages > 1 %}
-        <span>
-        {% if page > 1 %}<a href="?page={{ page-1 }}">◀</a>{% endif %}
-        <span>{{ page }}/{{ total_pages }}</span>
-        {% if page < total_pages %}<a href="?page={{ page+1 }}">▶</a>{% endif %}
-        </span>
-        {% endif %}
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><h1 style="margin:0;flex:1">📋 Очередь ({{ total }})</h1>
+        {% if total_pages > 1 %}<span style="display:inline-flex;align-items:center;background:#0984e3;border-radius:4px;overflow:hidden">{% if page > 1 %}<a href="?page={{ page-1 }}" style="color:#fff;padding:4px 12px;text-decoration:none;font-weight:700">◀</a>{% endif %}<span style="color:#fff;padding:4px 12px;border-left:1px solid rgba(255,255,255,.3);border-right:1px solid rgba(255,255,255,.3);font-weight:700">{{ page }}/{{ total_pages }}</span>{% if page < total_pages %}<a href="?page={{ page+1 }}" style="color:#fff;padding:4px 12px;text-decoration:none;font-weight:700">▶</a>{% endif %}</span>{% endif %}
     </div>
     
-    {% if status_counts %}
+    </div>{% if status_counts %}
     <p>
         {% for s, c in status_counts.items() %}
         {% set labels = {'pending_check': '🔍 Проверка', 'pending_download': '📥 Скачивание', 'pending_compress': '🗜️ Сжатие', 'pending_upload': '📤 Загрузка', 'completed': '✅ Завершено', 'failed': '❌ Ошибка'} %}

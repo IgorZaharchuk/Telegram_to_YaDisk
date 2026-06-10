@@ -28,7 +28,7 @@ th{color:#a8b2d1;font-size:9px;font-weight:700;padding:3px 1px}
 .filters a.active{background:#0984e3;color:#fff}
 .event{width:100%;position:relative;padding:10px 12px;background:#16213e;border-radius:8px;margin-bottom:5px;border:1px solid #0f3460}
 .event:hover{background:#1a2744}
-.event-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.event-header{display:block;margin-bottom:4px}
 .event-date{font-size:10px;color:#8892b0}
 .event-file{font-size:12px;font-weight:700;color:#ccd6f6;word-break:break-all;margin-bottom:2px}
 .event-meta{font-size:10px;color:#a8b2d1;margin-top:2px}
@@ -52,7 +52,7 @@ p.muted{color:#8892b0}
 .status-dot.stopped{background:#ff4444}
 .danger-zone{border-color:#e17055}.danger-zone h3{color:#e17055}
 .mt-10{margin-top:6px}.hidden{display:none}
-.file-card{width:100%;background:#16213e;padding:8px 10px;border-radius:6px;margin-bottom:3px;border:1px solid #0f3460;display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
+.file-card{width:100%;background:#16213e;padding:8px 10px;border-radius:6px;margin-bottom:3px;border:1px solid #0f3460;display:flex;justify-content:flex-start;align-items:center;gap:6px;flex-wrap:wrap}
 .file-name{font-size:11px;font-weight:700;color:#ccd6f6;word-break:break-all;margin-bottom:1px}
 .file-meta{font-size:9px;color:#8892b0}
 .file-actions{display:flex;gap:16px;align-items:center}
@@ -84,3 +84,28 @@ p.muted{color:#8892b0}
 }
 #blinker{font-size:0.4em!important}
 #blinker{font-size:8px!important;vertical-align:middle}
+.event-header{gap:2px!important}
+.event-status{margin-left:2px!important}
+
+
+
+.page-header{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.page-header h1{margin:0;flex:1}
+
+
+
+
+
+
+
+
+/* Перемотка */
+
+
+
+
+.pag-block{display:inline-flex!important;align-items:center!important;background:#0984e3!important;border-radius:4px!important;overflow:hidden!important}
+.pag-block a{color:#fff!important;background:#0984e3!important;padding:4px 8px!important;text-decoration:none!important;font-weight:700!important;font-size:14px!important;-webkit-text-fill-color:#fff!important}
+.pag-num{color:#fff!important;padding:4px 8px!important;border-left:1px solid rgba(255,255,255,.3)!important;border-right:1px solid rgba(255,255,255,.3)!important;font-weight:700!important;font-size:14px!important;background:#0984e3!important}
+.pag-block a:first-child{border-radius:4px 0 0 4px!important;background:#0984e3!important}
+.pag-block a:last-child{border-radius:0 4px 4px 0!important;background:#0984e3!important}
