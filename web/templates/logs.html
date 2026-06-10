@@ -8,19 +8,21 @@
 <body>
 {% include "_nav.html" %}
 <div class="container">
-    <h1>📝 Логи</h1>
-    <div class="log-header">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+    <h1 style="margin:0;flex:1">📝 Логи</h1>
+    {% if total_pages > 1 %}
+    <span style="display:inline-flex;align-items:center;background:#0984e3;border-radius:4px;overflow:hidden">
+    {% if page > 1 %}<a href="?type={{ log_type }}&page={{ page-1 }}" style="color:#fff;padding:4px 12px;text-decoration:none;font-weight:700">◀</a>{% endif %}
+    <span style="color:#fff;padding:4px 12px;border-left:1px solid rgba(255,255,255,.3);border-right:1px solid rgba(255,255,255,.3);font-weight:700">{{ page }} / {{ total_pages }}</span>
+    {% if page < total_pages %}<a href="?type={{ log_type }}&page={{ page+1 }}" style="color:#fff;padding:4px 12px;text-decoration:none;font-weight:700">▶</a>{% endif %}
+    </span>
+    {% endif %}
+</div><div class="log-header">
         <div class="tabs">
-            <a href="?type=backup" class="{% if log_type=='backup' %}active{% endif %}">📋 Бэкап</a>
-            <a href="?type=web" class="{% if log_type=='web' %}active{% endif %}">🌐 Веб-сервер</a>
+            <a href="?type=backup" class="tabs-btn {% if log_type=='backup' %}active{% endif %}">📋 Бэкап</a>
+            <a href="?type=web" class="tabs-btn {% if log_type=='web' %}active{% endif %}">🌐 Веб-сервер</a>
         </div>
-        {% if total_pages > 1 %}
-        <span style="display:inline-flex;align-items:center;background:#0984e3;border-radius:4px;overflow:hidden">
-            {% if page > 1 %}<a href="?type={{ log_type }}&page={{ page-1 }}" style="color:#fff;padding:4px 12px;text-decoration:none;font-weight:700">◀</a>{% endif %}
-            <span style="color:#fff;padding:4px 12px;border-left:1px solid rgba(255,255,255,.3);border-right:1px solid rgba(255,255,255,.3);font-weight:700">{{ page }} / {{ total_pages }}</span>
-            {% if page < total_pages %}<a href="?type={{ log_type }}&page={{ page+1 }}" style="color:#fff;padding:4px 12px;text-decoration:none;font-weight:700">▶</a>{% endif %}
-            </span>
-        {% endif %}
+
     </div>
     <pre>{% for line in content %}{{ line }}{% endfor %}</pre>
 </div>
