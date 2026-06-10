@@ -2,6 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <title>Дашборд — Telegram Backup</title>
     
@@ -11,42 +12,35 @@
 {% include "_nav.html" %}
 <div class="container">
     <div class="header">
-        <h1><span class="status-dot {% if running %}running{% else %}stopped{% endif %}"></span>
-            Telegram Backup
-            
-            <span id="blinker" style="font-size:0.75em">🟢</span>
-            {% if running and heartbeat_age > 0 %}<small style="font-size:20px;color:#8892b0">❤️ {{ "%.1f"|format(heartbeat_age) }}s</small>{% endif %}
-        </h1>
-        <div style="margin-bottom:10px">
-            <form method="POST" action="{{ url_for('backup.start_backup') }}" style="display:inline">
-                <button class="btn btn-green" {% if running %}disabled{% endif %}>{% if running %}✅ Запущен{% else %}▶️ Запустить{% endif %}</button>
-            </form>
-            <form method="POST" action="{{ url_for('backup.stop_backup') }}" style="display:inline">
-                <button class="btn btn-red" {% if not running %}disabled{% endif %}>⏹️ Остановить</button>
-            </form>
+        <div style="display:flex;align-items:center;gap:4px;margin-bottom:8px">
+        <span class="status-dot {% if running %}running{% else %}stopped{% endif %}"></span>
+        <span style="font-size:14px;font-weight:800;color:#ccd6f6;white-space:nowrap">Telegram Backup</span>
+        <span id="blinker">🟢</span>
+        {% if running and heartbeat_age > 0 %}<small>❤️ {{ "%.1f"|format(heartbeat_age) }}s</small>{% endif %}
+        <span style="flex:1"></span>
+        <form method="POST" action="{{ url_for('backup.start_backup') }}" style="display:inline">
+            <button class="btn btn-green" {% if running%}disabled{% endif %}>{% if running %}✅ Запущен{% else %}▶️ Запустить{% endif %}</button>
+        </form>
+        <form method="POST" action="{{ url_for('backup.stop_backup') }}" style="display:inline">
+            <button class="btn btn-red" {% if not running %}disabled{% endif %}>⏹️ Остановить</button>
+        </form>
         </div>
-        
-        <div class="flex">
-            
-        </div>
-    </div>
-
-    <div class="cards">
-        <div class="card"><div class="label">📦 Всего</div><div class="num" id="stat-total">{{ stats.total }}</div></div>
-        <div class="card"><div class="label">✅ Загружено</div><div class="num green" id="stat-uploaded">{{ stats.uploaded }}</div></div>
+<div class="cards">
+        <div class="card"><div class="label">Всего</div><div class="num" id="stat-total">{{ stats.total }}</div></div>
+        <div class="card"><div class="label">Загружено</div><div class="num green" id="stat-uploaded">{{ stats.uploaded }}</div></div>
         <div class="card"><div class="label">⏳ В очереди</div><div class="num blue" id="stat-pending">{{ stats.pending }}</div></div>
         <div class="card"><div class="label">☑️ Выбрано</div><div class="num orange" id="stat-selected">{{ stats.selected }}</div></div>
         <div class="card"><div class="label">🆕 Новых</div><div class="num purple" id="stat-new">{{ stats.new_files }}</div></div>
         <div class="card"><div class="label">❌ Ошибок</div><div class="num red" id="stat-errors">{{ stats.errors }}</div></div>
         <div class="card"><div class="label">⏭️ Пропущено</div><div class="num" id="stat-skipped">{{ stats.skipped }}</div></div>
         <div class="card"><div class="label">⬜ Не скачано</div><div class="num" id="stat-unloaded">{{ stats.unloaded }}</div></div>
-        <div class="card"><div class="label">🗜️ Сжато</div><div class="num orange" id="compressed-count">{{ compressed_count }}</div></div>
+        <div class="card"><div class="label">Сжато</div><div class="num orange" id="compressed-count">{{ compressed_count }}</div></div>
         <div class="card"><div class="label">💾 Экономия</div><div class="num green" id="saved-bytes">{{ fmt_size(saved_bytes) }}</div></div>
     </div>
 
     <div class="cards">
         <div class="card"><div class="label">📥 Скачано</div><div class="num green" id="sess-downloaded">{{ session.downloaded }}</div></div>
-        <div class="card"><div class="label">🗜️ Сжато</div><div class="num orange" id="sess-compressed">{{ session.compressed }}</div></div>
+        <div class="card"><div class="label">Сжато</div><div class="num orange" id="sess-compressed">{{ session.compressed }}</div></div>
         <div class="card"><div class="label">📤 Загружено</div><div class="num blue" id="sess-uploaded">{{ session.uploaded }}</div></div>
         <div class="card"><div class="label">🔍 Проверено</div><div class="num" id="sess-checked">{{ session.checked }}</div></div>
         <div class="card"><div class="label">⏭️ Пропущено</div><div class="num" id="sess-skipped">{{ session.skipped }}</div></div>
@@ -59,7 +53,7 @@
             {% for a in active %}
             <div class="active-item {% if a.worker_type=='download' %}download{% elif a.worker_type in ('compress_photo','compress_video') %}compress{% else %}upload{% endif %}">
                 <div class="file">{{ a.filename[:50] }}</div>
-                {% if a.progress %}<div class="progress-bar"><div class="progress-fill {% if a.worker_type=='download' %}download{% elif a.worker_type in ('compress_photo','compress_video') %}compress{% else %}upload{% endif %}" style="width:{{ a.progress }}%"></div></div>{% endif %}
+                {% if a.progress %}<div class="progress-bar"><div class="progress-fill {% if a.worker_type=='download' %}download{% elif a.worker_type in ('compress_photo','compress_video') %}compress{% else %}upload{% endif %}"></div></div>{% endif %}
                 <div class="info">{{ "%.0f"|format(a.progress or 0) }}% | {{ fmt_size(a.file_size or 0) }}{% if a.speed %} | ⚡{{ "%.1f"|format(a.speed) }}x{% endif %}{% if a.eta %} | ⏱️{{ a.eta|int }}s{% endif %}</div>
             </div>
             {% endfor %}
@@ -71,9 +65,9 @@
     <div class="section">
         <h2>🔄 Сканирование</h2>
         {% for cid, s in scan_progress.items() %}
-        <div style="margin:10px 0">
+        <div>
             <strong>{{ s.chat_name or 'Чат '~cid }}</strong>{% if s.current_topic %} — {{ s.current_topic[:40] }}{% endif %}
-            <div class="progress-bar"><div class="progress-fill download" style="width:{{ s.percent }}%"></div></div>
+            <div class="progress-bar"><div class="progress-fill download"></div></div>
             {{ "%.0f"|format(s.percent) }}% | Найдено: {{ s.files_found }}
         </div>
         {% endfor %}
@@ -89,9 +83,9 @@
     </div>
     {% if chat_stats %}
     <div class="section">
-        <h2>📁 Чаты</h2>
+        <h2>Чаты</h2>
         <table>
-            <tr><th>📁 Чат</th><th>📦 Всего</th><th>✅ Загружено</th><th>❌ Ошибки</th><th>🗜️ Сжато</th><th>💾 Объём</th></tr>
+            <tr><th>Чат</th><th>Всего</th><th>Загружено</th><th>Ошибки</th><th>Сжато</th><th>Объём</th></tr>
             {% for c in chat_stats %}
             <tr><td>{{ c.name or 'Чат '~c.chat_id }}</td><td>{{ c.total }}</td><td>{{ c.uploaded }}</td><td>{{ c.errors }}</td><td>{{ c.compressed }}</td><td>{{ fmt_size(c.uploaded_bytes) }} / {{ fmt_size(c.total_bytes) }}</td></tr>
             {% endfor %}

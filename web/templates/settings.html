@@ -2,6 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Настройки — Telegram Backup</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='settings.css') }}">
 <link rel="stylesheet" href="/backup/static/main.css">
@@ -12,9 +13,9 @@
     <h1>⚙️ Настройки</h1>
 
     <div class="section">
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-            <div style="display:flex;align-items:center;margin-bottom:5px;width:100%">
-                <h3 style="margin:0;flex:1">🕐 Окна работы</h3>
+        <div>
+            <div>
+                <h3>🕐 Окна работы</h3>
                 <form method="POST" action="{{ url_for('backup.add_window') }}">
                     <button class="btn btn-green">➕ Добавить окно</button>
                 </form>
@@ -22,7 +23,7 @@
             <form method="POST" action="{{ url_for('backup.add_window') }}" class="form-row">
                 <input type="text" name="start" placeholder="Начало (9:00)">
                 <input type="text" name="end" placeholder="Конец (18:00)">
-                <button class="btn btn-green" style="display:none"></button>
+                <button class="btn btn-green"></button>
             </form>
         </div>
         {% if windows %}

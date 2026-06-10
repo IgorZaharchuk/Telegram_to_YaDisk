@@ -1,19 +1,20 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="/backup/static/main.css">
 </head>
 <body>
 {% include "_nav.html" %}
 <div class="container">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-    <h1 style="margin:0">📜 История операций</h1>
+    <div>
+    <h1>📜 История операций</h1>
     {% if total_pages > 1 %}
-    <span style="display:inline-flex;align-items:center;background:#0984e3;border-radius:6px;overflow:hidden">
-    {% if page > 1 %}<a href="?page={{ page-1 }}" style="font-size:34px;color:#fff;font-weight:900;text-decoration:none;background:#0984e3;padding:4px 12px;border-right:2px solid rgba(255,255,255,.5)">◀</a>{% endif %}
-    <span style="color:#fff;font-size:22px;padding:4px 12px;border-left:1px solid rgba(255,255,255,.3);border-right:1px solid rgba(255,255,255,.3)">{{ page }}/{{ total_pages }}</span>
-    {% if page < total_pages %}<a href="?page={{ page+1 }}" style="font-size:34px;color:#fff;font-weight:900;text-decoration:none;background:#0984e3;padding:4px 12px;border-left:2px solid rgba(255,255,255,.5)">▶</a>{% endif %}
+    <span>
+    {% if page > 1 %}<a href="?page={{ page-1 }}">◀</a>{% endif %}
+    <span>{{ page }}/{{ total_pages }}</span>
+    {% if page < total_pages %}<a href="?page={{ page+1 }}">▶</a>{% endif %}
     </span>
     {% endif %}
 </div>
@@ -23,7 +24,7 @@
         <div class="event">
             <div class="event-header">
                 <span class="event-date">{{ item.date_str }}</span>
-                <span class="event-statuses" style="display:flex;gap:4px;flex-wrap:wrap">
+                <span class="event-statuses">
                     {% for st in item.statuses %}
                     <span class="event-status status-{{ st }}">
                         {% if st == 'queued' %}⏳ В очереди
@@ -45,7 +46,7 @@
                 {% endif %}
                 <span> • {{ fmt_size(item.size) }}</span>
                 {% if item.compressed_size and item.compressed_size != item.size and item.compressed_size > 0 %}
-                <span style="color:#00b894"> → {{ fmt_size(item.compressed_size) }} (экономия {{ ((1 - item.compressed_size/item.size)*100)|round }}%)</span>
+                <span> → {{ fmt_size(item.compressed_size) }} (экономия {{ ((1 - item.compressed_size/item.size)*100)|round }}%)</span>
                 {% endif %}
             </div>
         </div>

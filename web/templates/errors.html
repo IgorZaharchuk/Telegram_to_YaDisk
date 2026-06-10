@@ -1,14 +1,15 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="/backup/static/main.css">
 </head>
 <body>
 {% include "_nav.html" %}
 <div class="container">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <h1 style="margin:0">⚠️ Ошибки</h1>
+    <div>
+        <h1>⚠️ Ошибки</h1>
         <form method="POST" action="{{ url_for('backup.clear_errors') }}">
             <button class="btn btn-red">🗑️ Очистить все ошибки</button>
         </form>
@@ -21,7 +22,7 @@
         <div class="event">
             <div class="event-header">
                 <span class="event-date">{{ item.date_str }}</span>
-                <span style="color:#e17055;font-size:14px">{{ item.errors|length }} ошибок</span>
+                <span>{{ item.errors|length }} ошибок</span>
             </div>
             <div class="event-file">📄 {{ item.filename[:80] }}</div>
             <div class="event-meta">
@@ -49,7 +50,7 @@
                 <span class="event-date">{{ e.date_str or e.timestamp }}</span>
             </div>
             <div class="event-file">⚙️ {{ e.component }}</div>
-            <div class="event-meta" style="color:#e17055">{{ e.error[:200] }}</div>
+            <div class="event-meta">{{ e.error[:200] }}</div>
         </div>
         {% endfor %}
     </div>

@@ -1,15 +1,16 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="/backup/static/main.css">
 </head>
 <body>
 {% include "_nav.html" %}
 <div class="container">
-    <div style="display:flex;align-items:center;margin-bottom:8px">
-    <h2 style="margin:0;flex:1">📁 {{ chat_name }} / 📂 {{ topic.topic_name }}</h2>
-    <a href="{{ url_for('backup.chat_detail', chat_id=chat_id) }}" class="btn btn-blue" style="font-size:24px">◀ Назад</a>
+    <div>
+    <h2>📁 {{ chat_name }} / 📂 {{ topic.topic_name }}</h2>
+    <a href="{{ url_for('backup.chat_detail', chat_id=chat_id) }}" class="btn btn-blue">◀ Назад</a>
 </div>
     <p>
         <span class="tag tag-green counter-tag">Всего: {{ stats.total }}</span>
@@ -33,33 +34,33 @@
     </div>
     <div class="filters">
         <strong>Действия:</strong>
-        <form method="POST" action="{{ url_for('backup.deselect_all_files', chat_id=chat_id, topic_id=topic_id) }}" style="display:inline">
+        <form method="POST" action="{{ url_for('backup.deselect_all_files', chat_id=chat_id, topic_id=topic_id) }}">
             <input type="hidden" name="type" value="{{ type_filter }}">
             <input type="hidden" name="status" value="{{ status_filter }}">
             <input type="hidden" name="sort" value="{{ sort_by }}">
             <input type="hidden" name="order" value="{{ sort_order }}">
             <button type="submit" class="act-btn">⬜ Снять</button>
         </form>
-        <form method="POST" action="{{ url_for('backup.select_unuploaded_files', chat_id=chat_id, topic_id=topic_id) }}" style="display:inline">
+        <form method="POST" action="{{ url_for('backup.select_unuploaded_files', chat_id=chat_id, topic_id=topic_id) }}">
             <input type="hidden" name="type" value="{{ type_filter }}">
             <input type="hidden" name="status" value="{{ status_filter }}">
             <input type="hidden" name="sort" value="{{ sort_by }}">
             <input type="hidden" name="order" value="{{ sort_order }}">
             <button type="submit" class="act-btn">☑️ Выбрать</button>
         </form>
-        <form method="POST" action="{{ url_for('backup.select_new_files', chat_id=chat_id, topic_id=topic_id) }}" style="display:inline">
+        <form method="POST" action="{{ url_for('backup.select_new_files', chat_id=chat_id, topic_id=topic_id) }}">
             <input type="hidden" name="type" value="{{ type_filter }}">
             <input type="hidden" name="status" value="{{ status_filter }}">
             <input type="hidden" name="sort" value="{{ sort_by }}">
             <input type="hidden" name="order" value="{{ sort_order }}">
             <button type="submit" class="act-btn">🆕 Новые</button>
         </form>
-        <form method="POST" action="{{ url_for('backup.reset_topic_errors', chat_id=chat_id, topic_id=topic_id) }}" style="display:inline">
+        <form method="POST" action="{{ url_for('backup.reset_topic_errors', chat_id=chat_id, topic_id=topic_id) }}">
             <input type="hidden" name="type" value="{{ type_filter }}">
             <input type="hidden" name="status" value="{{ status_filter }}">
             <input type="hidden" name="sort" value="{{ sort_by }}">
             <input type="hidden" name="order" value="{{ sort_order }}">
-            <button type="submit" class="act-btn" style="color:#e17055">🔄 Ошибки</button>
+            <button type="submit" class="act-btn">🔄 Ошибки</button>
         </form>
     </div>
 
@@ -70,13 +71,13 @@
         {% endfor %}
         
         {% if total_pages > 1 %}
-        <span style="display:inline-flex;align-items:center;background:#0984e3;border-radius:6px;overflow:hidden;margin-left:30px;margin-right:8px">
-            {% if page > 1 %}<a href="?page={{ page-1 }}&type={{ type_filter }}&status={{ status_filter }}&sort={{ sort_by }}&order={{ sort_order }}" style="font-size:34px;color:#fff;font-weight:900;text-decoration:none;padding:4px 12px;background:#0984e3">◀</a>{% endif %}
-            <span style="color:#fff;font-size:22px;font-weight:800;padding:4px 12px;border-left:2px solid rgba(255,255,255,.3);border-right:2px solid rgba(255,255,255,.3)">{{ page }}/{{ total_pages }}</span>
-            {% if page < total_pages %}<a href="?page={{ page+1 }}&type={{ type_filter }}&status={{ status_filter }}&sort={{ sort_by }}&order={{ sort_order }}" style="font-size:34px;color:#fff;font-weight:900;text-decoration:none;padding:4px 12px;background:#0984e3">▶</a>{% endif %}
+        <span>
+            {% if page > 1 %}<a href="?page={{ page-1 }}&type={{ type_filter }}&status={{ status_filter }}&sort={{ sort_by }}&order={{ sort_order }}">◀</a>{% endif %}
+            <span>{{ page }}/{{ total_pages }}</span>
+            {% if page < total_pages %}<a href="?page={{ page+1 }}&type={{ type_filter }}&status={{ status_filter }}&sort={{ sort_by }}&order={{ sort_order }}">▶</a>{% endif %}
         </span>
         {% endif %}
-        <a href="https://disk.yandex.ru/client/disk{{ disk_path }}" target="_blank" style="color:#a29bfe;font-size:25px;margin-left:auto;font-weight:700">📂 Диск</a>
+        <a href="https://disk.yandex.ru/client/disk{{ disk_path }}" target="_blank">📂 Диск</a>
     </div>
 
     {% for f in files %}
@@ -94,7 +95,7 @@
             </div>
         </div>
         <div class="file-actions">
-            <form method="POST" action="{{ url_for('backup.toggle_file', chat_id=chat_id, message_id=f.message_id, topic_id=topic_id) }}" style="display:inline">
+            <form method="POST" action="{{ url_for('backup.toggle_file', chat_id=chat_id, message_id=f.message_id, topic_id=topic_id) }}">
                 <button class="btn-sm {% if f.state==1 %}btn-gray{% else %}btn-green{% endif %}">{% if f.state==1 %}⬜{% else %}☑️{% endif %}</button>
             </form>
             {% if f.state == 2 or f.state == 3 %}

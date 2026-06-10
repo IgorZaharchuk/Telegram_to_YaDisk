@@ -1,13 +1,14 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="/backup/static/main.css">
 </head>
 <body>
 {% include "_nav.html" %}
 <div class="container">
-    <h1 style="color:#ccd6f6;margin-bottom:8px">📂 Яндекс.Диск</h1>
+    <h1>📂 Яндекс.Диск</h1>
     
     {% if error %}
     <div class="error">⚠️ {{ error }}</div>
@@ -28,7 +29,7 @@
     
     {% if files %}
     <table>
-        <tr><th>Имя</th><th>Размер</th><th>Тип</th><th style="width:220px">Действия</th></tr>
+        <tr><th>Имя</th><th>Размер</th><th>Тип</th><th>Действия</th></tr>
         {% for item in files %}
         <tr>
             <td>
@@ -69,7 +70,7 @@
         {% endfor %}
     </table>
     {% elif not error %}
-    <p style="color:#8892b0;font-size:20px">📭 Папка пуста</p>
+    <p>📭 Папка пуста</p>
     {% endif %}
 </div>
 </body>

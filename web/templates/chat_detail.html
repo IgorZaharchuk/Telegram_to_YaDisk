@@ -1,17 +1,18 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="/backup/static/main.css">
 </head>
 <body>
 {% include "_nav.html" %}
 <div class="container">
-<div style="display:flex;align-items:center;margin-bottom:10px">
-    <h1 style="margin:0;flex:1">📁 {{ name }} <small style="color:#636e72">(ID: {{ chat_id }})</small></h1>
-    <a href="{{ url_for('backup.chats') }}" class="btn btn-blue" style="font-size:24px">◀ Назад</a>
+<div>
+    <h1>📁 {{ name }} <small>(ID: {{ chat_id }})</small></h1>
+    <a href="{{ url_for('backup.chats') }}" class="btn btn-blue">◀ Назад</a>
 </div>
-<p style="display:flex;gap:6px;flex-wrap:wrap">
+<p>
     <span class="tag tag-green">Всего: {{ stats.total or 0 }}</span>
     <span class="tag tag-green">Загружено: {{ stats.uploaded or 0 }}</span>
     <span class="tag tag-red">Ошибок: {{ stats.errors or 0 }}</span>
@@ -19,46 +20,46 @@
     <span class="tag">🗜️ Сжато: {{ stats.compressed or 0 }}</span>
     <span class="tag">💾 {{ fmt_size(stats.uploaded_bytes or 0) }}</span>
 </p>
-<div class="flex" style="margin-bottom:15px">
+<div class="flex">
     <form method="POST" action="{{ url_for('backup.refresh_cache', chat_id=chat_id) }}">
-        <button class="btn btn-blue" style="padding:12px 16px">🔄 Обновить кэш</button>
+        <button class="btn btn-blue">🔄 Обновить кэш</button>
     </form>
     <form method="POST" action="{{ url_for('backup.reset_chat_errors', chat_id=chat_id) }}">
-        <button class="btn btn-gray" style="padding:12px 16px">🔄 Сбросить ошибки</button>
+        <button class="btn btn-gray">🔄 Сбросить ошибки</button>
     </form>
     <form method="POST" action="{{ url_for('backup.delete_chat', chat_id=chat_id) }}" onsubmit="return confirm('Удалить чат полностью? Все данные будут потеряны!')" onsubmit="return confirm('Удалить чат полностью?')">
-        <button class="btn btn-red" style="padding:12px 16px">❌ Удалить чат</button>
+        <button class="btn btn-red">❌ Удалить чат</button>
     </form>
 </div>
 {% if scan and not scan.completed %}
-<div class="section" style="background:#1a2744;padding:14px;border-radius:8px;margin-bottom:12px">
-    <span style="color:#fdcb6e;font-weight:700;font-size:20px">🔄 Сканируется: {{ name }}{% if scan.current_topic %} → 📂 {{ scan.current_topic }}{% endif %}</span>
-    <div style="display:flex;gap:12px;margin:6px 0;font-size:20px">
+<div class="section">
+    <span>🔄 Сканируется: {{ name }}{% if scan.current_topic %} → 📂 {{ scan.current_topic }}{% endif %}</span>
+    <div>
         <span>📊 Найдено: <strong>{{ scan.files_found }}</strong></span>
         <span>📁 Всего: <strong>{{ stats.total or 0 }}</strong></span>
         <span>✅ Загружено: <strong>{{ stats.uploaded or 0 }}</strong></span>
     </div>
-    <div style="height:8px;background:#0f3460;border-radius:4px"><div style="height:100%;width:{{ scan.percent }}%;background:linear-gradient(90deg,#fdcb6e,#e17055);border-radius:4px"></div></div>
-    <span style="font-size:20px;color:#fdcb6e">{{ "%.0f"|format(scan.percent) }}%</span>
+    <div><div></div></div>
+    <span>{{ "%.0f"|format(scan.percent) }}%</span>
 </div>
 {% endif %}
 {% if topics %}
-<div class="section"><h2 style="font-size:28px">Темы</h2>
+<div class="section"><h2>Темы</h2>
 <div class="table-wrap"><table>
 <tr><th>Тема</th><th>Файлов</th><th>Загружено</th><th>Выбрано</th><th>Ошибок</th><th>Статус</th><th>Действия</th></tr>
 {% for t in topics %}
 <tr>
-<td><a href="{{ url_for('backup.topic_files', chat_id=chat_id, topic_id=t.topic_id) }}" style="color:#74b9ff">{{ t.topic_name }}</a></td>
+<td><a href="{{ url_for('backup.topic_files', chat_id=chat_id, topic_id=t.topic_id) }}">{{ t.topic_name }}</a></td>
 <td>{{ t.files_count }}</td><td>{{ t.uploaded_count }}</td><td>{{ t.selected_count }}</td><td>{{ t.error_count }}</td>
 <td>{% if t.is_selected %}✅{% else %}❌{% endif %}</td>
 <td>
     {% if t.is_selected %}
-    <form method="POST" action="{{ url_for('backup.deselect_topic', chat_id=chat_id, topic_id=t.topic_id) }}" style="display:inline">
-        <button class="btn btn-gray" style="white-space:nowrap;padding:12px 16px;width:150px;text-align:center">⬜ Снять</button>
+    <form method="POST" action="{{ url_for('backup.deselect_topic', chat_id=chat_id, topic_id=t.topic_id) }}">
+        <button class="btn btn-gray">⬜ Снять</button>
     </form>
     {% else %}
-    <form method="POST" action="{{ url_for('backup.select_topic', chat_id=chat_id, topic_id=t.topic_id) }}" style="display:inline">
-        <button class="btn btn-green" style="white-space:nowrap;padding:12px 16px;width:150px;text-align:center">✅ Выбрать</button>
+    <form method="POST" action="{{ url_for('backup.select_topic', chat_id=chat_id, topic_id=t.topic_id) }}">
+        <button class="btn btn-green">✅ Выбрать</button>
     </form>
     {% endif %}
     

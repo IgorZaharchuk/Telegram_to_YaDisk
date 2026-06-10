@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     {% if request.args.get('scanning') == '1' %}<meta http-equiv="refresh" content="5">{% endif %}<title>Чаты — Telegram Backup</title>
 
 <link rel="stylesheet" href="/backup/static/main.css">
@@ -8,53 +9,53 @@
 <body>
 {% include "_nav.html" %}
 <div class="container">
-    {% if request.args.get('scanning') == '1' %}<p style="color:#fdcb6e;font-size:20px">🔄 Идёт сканирование... Страница обновляется автоматически.</p>{% endif %}
+    {% if request.args.get('scanning') == '1' %}<p>🔄 Идёт сканирование... Страница обновляется автоматически.</p>{% endif %}
 <h1>💬 Управление чатами</h1>
-<div class="section" style="padding:16px;margin-bottom:16px">
-    <form method="POST" action="{{ url_for('backup.add_chat') }}" style="display:flex;gap:10px;align-items:center">
-        <input type="text" name="chat_id" placeholder="ID чата (-1001234567890)" style="width:300px">
+<div class="section">
+    <form method="POST" action="{{ url_for('backup.add_chat') }}">
+        <input type="text" name="chat_id" placeholder="ID чата (-1001234567890)">
         <button class="btn btn-green">➕ Добавить чат</button>
     </form>
 </div>
-<form method="POST" action="{{ url_for('backup.refresh_all_cache') }}" style="margin-bottom:15px">
+<form method="POST" action="{{ url_for('backup.refresh_all_cache') }}">
     <button class="btn btn-blue">🔄 Обновить кэш всех чатов</button>
 </form>
 {% for chat in chats %}
 <div class="section">
-    <div class="flex" style="justify-content:space-between">
-        <h2><a href="{{ url_for('backup.chat_detail', chat_id=chat.id) }}" style="color:#ccd6f6;text-decoration:none">{{ chat.name }}</a> <small style="color:#636e72;font-size:20px">ID: {{ chat.id }}</small></h2>
+    <div class="flex">
+        <h2><a href="{{ url_for('backup.chat_detail', chat_id=chat.id) }}">{{ chat.name }}</a> <small>ID: {{ chat.id }}</small></h2>
         <div>
             
             
         </div>
     </div>
-    <p style="margin:10px 0 5px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+    <p>
         <span class="tag tag-green">✅ Загружено: {{ chat.stats.uploaded or 0 }}/{{ chat.stats.total or 0 }}</span>
         <span class="tag tag-red">❌ Ошибок: {{ chat.stats.errors or 0 }}</span>
         <span class="tag">🗜️ Сжато: {{ chat.stats.compressed or 0 }}</span>
         <span class="tag">💾 {{ fmt_size(chat.stats.uploaded_bytes or 0) }} / {{ fmt_size(chat.stats.total_bytes or 0) }}</span>
         <span class="tag tag-blue">📂 Тем: {{ chat.topics_count }}</span>
     </p>
-    <div style="margin-top:8px">
+    <div>
         <a href="{{ url_for('backup.chat_detail', chat_id=chat.id) }}" class="btn btn-blue">📂 Управление</a>
-        <form method="POST" action="{{ url_for('backup.delete_chat', chat_id=chat.id) }}" style="display:inline" onsubmit="return confirm('Удалить чат?')">
+        <form method="POST" action="{{ url_for('backup.delete_chat', chat_id=chat.id) }}" onsubmit="return confirm('Удалить чат?')">
             <button class="btn btn-red">❌ Удалить</button>
         </form>
     </div>
     {% if chat.scan and not chat.scan.completed %}
-    <div style="margin:8px 0;background:#1a2744;padding:10px;border-radius:8px">
-        <span style="color:#fdcb6e;font-weight:700">🔄 Сканируется: {{ chat.scan.chat_name or chat.name }}{% if chat.scan.current_topic %} → 📂 {{ chat.scan.current_topic }}{% endif %}</span>
-        <div style="display:flex;gap:12px;margin:6px 0;font-size:20px">
+    <div>
+        <span>🔄 Сканируется: {{ chat.scan.chat_name or chat.name }}{% if chat.scan.current_topic %} → 📂 {{ chat.scan.current_topic }}{% endif %}</span>
+        <div>
             <span>📊 Найдено: <strong>{{ chat.scan.files_found }}</strong></span>
             <span>📁 Всего: <strong>{{ chat.stats.total or 0 }}</strong></span>
             <span>✅ Загружено: <strong>{{ chat.stats.uploaded or 0 }}</strong></span>
         </div>
-        <div style="height:8px;background:#0f3460;border-radius:4px"><div style="height:100%;width:{{ chat.scan.percent }}%;background:linear-gradient(90deg,#fdcb6e,#e17055);border-radius:4px"></div></div>
-        <span style="font-size:20px;color:#fdcb6e">{{ "%.0f"|format(chat.scan.percent) }}%</span>
+        <div><div></div></div>
+        <span>{{ "%.0f"|format(chat.scan.percent) }}%</span>
     </div>
     {% endif %}
 </div>
 {% else %}
-<p style="color:#8892b0;font-size:22px">Нет добавленных чатов. <a href="{{ url_for('backup.settings') }}" style="color:#74b9ff">Добавить чат</a></p>
+<p>Нет добавленных чатов. <a href="{{ url_for('backup.settings') }}">Добавить чат</a></p>
 {% endfor %}
 </div></body></html>

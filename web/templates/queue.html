@@ -1,28 +1,29 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="/backup/static/main.css">
 </head>
 <body>
 {% include "_nav.html" %}
 <div class="container">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <h1 style="margin:0">📋 Очередь ({{ total }})</h1>
+    <div>
+        <h1>📋 Очередь ({{ total }})</h1>
         {% if total_pages > 1 %}
-        <span style="display:inline-flex;align-items:center;background:#0984e3;border-radius:6px;overflow:hidden">
-        {% if page > 1 %}<a href="?page={{ page-1 }}" style="font-size:34px;color:#fff;font-weight:900;text-decoration:none;background:#0984e3;padding:4px 12px;border-right:2px solid rgba(255,255,255,.5)">◀</a>{% endif %}
-        <span style="color:#fff;font-size:22px;padding:4px 12px;border-left:1px solid rgba(255,255,255,.3);border-right:1px solid rgba(255,255,255,.3)">{{ page }}/{{ total_pages }}</span>
-        {% if page < total_pages %}<a href="?page={{ page+1 }}" style="font-size:34px;color:#fff;font-weight:900;text-decoration:none;background:#0984e3;padding:4px 12px;border-left:2px solid rgba(255,255,255,.5)">▶</a>{% endif %}
+        <span>
+        {% if page > 1 %}<a href="?page={{ page-1 }}">◀</a>{% endif %}
+        <span>{{ page }}/{{ total_pages }}</span>
+        {% if page < total_pages %}<a href="?page={{ page+1 }}">▶</a>{% endif %}
         </span>
         {% endif %}
     </div>
     
     {% if status_counts %}
-    <p style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+    <p>
         {% for s, c in status_counts.items() %}
         {% set labels = {'pending_check': '🔍 Проверка', 'pending_download': '📥 Скачивание', 'pending_compress': '🗜️ Сжатие', 'pending_upload': '📤 Загрузка', 'completed': '✅ Завершено', 'failed': '❌ Ошибка'} %}
-        <span class="tag tag-blue" style="font-size:20px">{{ labels.get(s, s) }}: {{ c }}</span>
+        <span class="tag tag-blue">{{ labels.get(s, s) }}: {{ c }}</span>
         {% endfor %}
     </p>
     {% endif %}
