@@ -445,6 +445,8 @@ def logs():
 
 @backup_bp.route('/errors')
 def errors_view():
+    page = request.args.get('page', 1, type=int)
+    per_page = 50
     conn = get_db()
     c = conn.cursor()
     file_rows = c.execute("SELECT * FROM file_errors ORDER BY timestamp DESC LIMIT 300").fetchall()
@@ -468,10 +470,14 @@ def errors_view():
                 grouped_files[key]['_seen'].add(err_tuple)
                 grouped_files[key]['errors'].append({'stage': item['stage'], 'error': item['error']})
     
-    file_errs = sorted(grouped_files.values(), key=lambda x: x['timestamp'], reverse=True)[:100]
+    file_errs = sorted(grouped_files.values(), key=lambda x: x['timestamp'], reverse=True)
+    total = len(file_errs)
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    offset = (page - 1) * per_page
+    file_errs = file_errs[offset:offset + per_page]
     for f in file_errs: f.pop('_seen', None)
     conn.close()
-    return render_template('errors.html', file_errs=file_errs, sys_errs=sys_errs)
+    return render_template('errors.html', file_errs=file_errs, sys_errs=sys_errs, page=page, total_pages=total_pages)
 
 @backup_bp.route('/chats')
 def chats():
