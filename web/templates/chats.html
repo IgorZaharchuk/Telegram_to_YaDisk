@@ -37,9 +37,9 @@
         <span class="tag tag-blue">📂 Тем: {{ chat.topics_count }}</span>
     </p>
     <div>
-        <a href="{{ url_for('backup.chat_detail', chat_id=chat.id) }}" class="btn btn-blue">📂 Управление</a>
+        <div style="display:flex;gap:8px;margin-top:8px"><a href="{{ url_for('backup.chat_detail', chat_id=chat.id) }}" class="btn btn-blue">📂 Управление</a>
         <form method="POST" action="{{ url_for('backup.delete_chat', chat_id=chat.id) }}" onsubmit="return confirm('Удалить чат?')">
-            <button class="btn btn-red">❌ Удалить</button>
+            <button class="btn btn-red">❌ Удалить</button></div>
         </form>
     </div>
     {% if chat.scan and not chat.scan.completed %}
