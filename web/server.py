@@ -1008,12 +1008,28 @@ def yadisk_links():
             result[path] = cached[0]
             continue
         try:
+            # Пробуем точный путь
             r = requests.get(f'https://cloud-api.yandex.net/v1/disk/resources/download?path={path}', headers=headers, timeout=5)
             if r.status_code == 200:
                 url = r.json().get('href', '')
                 if url:
                     _disk_link_cache[path] = (url, now + 600)
                     result[path] = url
+                    continue
+            # Если не найден — ищем по имени в родительской папке
+            parent = '/'.join(path.split('/')[:-1])
+            fname = path.split('/')[-1]
+            r2 = requests.get(f'https://cloud-api.yandex.net/v1/disk/resources?path={parent}&limit=500', headers=headers, timeout=5)
+            if r2.status_code == 200:
+                for item in r2.json().get('_embedded', {}).get('items', []):
+                    if item['name'] == fname:
+                        r3 = requests.get(f'https://cloud-api.yandex.net/v1/disk/resources/download?path={item["path"]}', headers=headers, timeout=5)
+                        if r3.status_code == 200:
+                            url = r3.json().get('href', '')
+                            if url:
+                                _disk_link_cache[path] = (url, now + 600)
+                                result[path] = url
+                        break
         except:
             pass
     
