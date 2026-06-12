@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0">
     
     <title>Дашборд — Telegram Backup</title>
     
@@ -14,7 +14,7 @@
     <div class="header">
         <div style="display:flex;align-items:center;gap:4px;margin-bottom:8px">
         <span class="status-dot {% if running %}running{% else %}stopped{% endif %}"></span>
-        <span style="font-size:14px;font-weight:800;color:#ccd6f6;white-space:nowrap">Telegram Backup</span>
+        <span style="font-weight:800;color:#ccd6f6;white-space:nowrap">Telegram Backup</span>
         <span id="blinker">🟢</span>
         {% if running and heartbeat_age > 0 %}<small>❤️ {{ "%.1f"|format(heartbeat_age) }}s</small>{% endif %}
         <span style="flex:1"></span>

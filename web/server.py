@@ -1,13 +1,14 @@
+#!/usr/bin/env python3
 import requests
 from dotenv import load_dotenv
 load_dotenv()
-#!/usr/bin/env python3
+__version__ = "0.18.3"
 """
 Веб-интерфейс Telegram Backup — ПОЛНЫЙ ФУНКЦИОНАЛ
 Автообновление, прогресс-бары, сессионные счётчики
 """
 
-import os, sys, json, time, sqlite3, subprocess, signal, re
+import os, sys, json, time, sqlite3, subprocess, signal, re, shutil, mimetypes
 from pathlib import Path
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, Blueprint, jsonify
@@ -207,7 +208,6 @@ def api_status():
         chat_stats.append(dict(row))
     
     # Системная информация
-    import shutil
     disk = shutil.disk_usage(PROJECT_DIR)
     mem_total = mem_avail = 0
     try:
@@ -955,7 +955,6 @@ def yadisk_file():
         filename = path.split('/')[-1]
         content_type = file_r.headers.get('Content-Type', 'application/octet-stream')
         # Определяем MIME по расширению если Яндекс не дал правильный
-        import mimetypes
         ext = os.path.splitext(filename)[1].lower()
         mime_map = {'.jpg':'image/jpeg','.jpeg':'image/jpeg','.png':'image/png','.gif':'image/gif','.webp':'image/webp',
                     '.mp4':'video/mp4','.avi':'video/x-msvideo','.mkv':'video/x-matroska','.mov':'video/quicktime',
@@ -983,8 +982,7 @@ def yadisk_links():
     """Возвращает прямые ссылки для списка файлов."""
     paths = request.args.get('paths', '').split(',')
     if not paths or not YA_TOKEN:
-        import shutil
-    disk = shutil.disk_usage(PROJECT_DIR)
+        disk = shutil.disk_usage(PROJECT_DIR)
     mem_total = mem_avail = 0
     try:
         with open('/proc/meminfo') as f:
