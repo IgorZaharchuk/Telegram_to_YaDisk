@@ -967,6 +967,19 @@ def yadisk_file():
         if content_length:
             headers_out['Content-Length'] = content_length
         
+        # Поддержка Range для видео
+        range_header = request.headers.get('Range', '')
+        if range_header and content_length:
+            from flask import Response as FResponse
+            size = int(content_length)
+            byte_range = range_header.replace('bytes=', '').split('-')
+            start = int(byte_range[0]) if byte_range[0] else 0
+            end = int(byte_range[1]) if len(byte_range) > 1 and byte_range[1] else size - 1
+            length = end - start + 1
+            file_r = requests.get(download_url, headers={'Range': f'bytes={start}-{end}', **headers}, stream=True)
+            return FResponse(file_r.iter_content(chunk_size=131072), 206, content_type=content_type,
+                           headers={'Content-Range': f'bytes {start}-{end}/{size}', 'Content-Length': str(length), 'Accept-Ranges': 'bytes'},
+                           direct_passthrough=True)
         return Response(
             file_r.iter_content(chunk_size=131072),
             content_type=content_type,
